@@ -1,6 +1,4 @@
-
-
-from sqlalchemy import Column, String, Text, Integer, TIMESTAMP, func
+from sqlalchemy import Column, String, Text, Integer, TIMESTAMP, func, Index  # ⬅ add Index
 import uuid
 
 from app.core.database import Base
@@ -16,9 +14,12 @@ class TimeEntry(Base):
     activity = Column(String, nullable=False)
 
     start_utc = Column(TIMESTAMP(timezone=True), nullable=False)
-    end_utc = Column(TIMESTAMP(timezone=True), nullable=False)
-    seconds = Column(Integer, nullable=False)    # computed in CRUD on create/update
+    end_utc   = Column(TIMESTAMP(timezone=True), nullable=False)
+    seconds   = Column(Integer, nullable=False)  # computed in CRUD on create/update
 
     notes = Column(Text, nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+# Helpful for week queries and overlap checks
+Index("ix_time_entries_user_start", TimeEntry.user_id, TimeEntry.start_utc)
