@@ -1,0 +1,36 @@
+Logger/
+│
+├── backend/
+│   ├── .venv/                  
+│   ├── main.py                  
+│   ├── app/                     
+│   │   ├── __init__.py
+│   │   ├── core/                
+│   │   │   ├── config.py
+│   │   │   └── database.py
+│   │   ├── models/              
+│   │   │   └── time_entry.py
+│   │   ├── schemas/             
+│   │   │   └── time_entry.py
+│   │   ├── routes/              
+│   │   │   ├── __init__.py
+│   │   │   └── time_entries.py
+│   │   ├── crud/                
+│   │   │   └── time_entry.py
+│   │   ├── migrations/          
+│   │   └── utils/               
+│   ├── tests/                   
+│   ├── alembic.ini              
+│   ├── requirements.txt         
+│   └── Dockerfile               
+│
+├── frontend/
+│   ├── src/                     
+│   ├── public/
+│   ├── vite.config.js
+│   ├── package.json
+│   └── Dockerfile               
+│
+├── docker-compose.yml           
+├── README.md
+└── .gitignore
