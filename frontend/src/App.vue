@@ -7,5 +7,7 @@ import TimeBoard from './components/TimeBoard.vue'
 </template>
 
 <style scoped>
-/* page styles, if needed */
+/* optional page tweaks */
+:host, :root { --page-bg: #f5f6f8; }
+:global(body) { margin: 0; background: var(--page-bg); }
 </style>
