@@ -1,19 +1,21 @@
-
-
 """
-SQLAlchemy database bootstrap.
+SQLAlchemy database bootstrap (env-driven, no external config import).
 """
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-from .config import get_settings
 
-settings = get_settings()
+# DATABASE_URL examples:
+#   sqlite:///./app.db
+#   postgresql+psycopg://user:pass@localhost:5432/logger
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
 
-# Engine & session
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(
-    settings.DATABASE_URL,
+    DATABASE_URL,
     future=True,
     pool_pre_ping=True,
+    connect_args=connect_args,
 )
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
