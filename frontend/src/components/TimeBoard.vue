@@ -1,10 +1,11 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import draggable from 'vuedraggable'
 import TimeCard from './TimeCard.vue'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000'
 const userId = 'user-123' // TODO: wire real auth later
+const TARGET_WEEKLY_HOURS = 40
 
 // ---- Date helpers (local time) ----
 function pad(n) { return String(n).padStart(2, '0') }
@@ -19,14 +20,10 @@ function addDays(d, n) { const z = new Date(d); z.setDate(z.getDate() + n); retu
 function dateKey(d) { return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}` }
 function labelFor(d) { return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) }
 function laneKeyFromISO(iso) { if (!iso) return null; return dateKey(new Date(iso)) }
-function timeHMFromISO(iso) {
-  const d = new Date(iso)
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
+function timeHMFromISO(iso) { const d = new Date(iso); return `${pad(d.getHours())}:${pad(d.getMinutes())}` }
 function composeISOFromLaneAndTime(laneKey, hm) {
-  // laneKey: YYYY-MM-DD, hm: HH:MM interpreted in local time
-  const local = new Date(`${laneKey}T${hm}`)
-  return local.toISOString() // convert to UTC ISO
+  const local = new Date(`${laneKey}T${hm}`) // local time
+  return local.toISOString() // store UTC
 }
 function hoursBetween(isoA, isoB) {
   if (!isoA || !isoB) return 0
@@ -35,22 +32,37 @@ function hoursBetween(isoA, isoB) {
   return Math.max(0, (b - a) / 3600000)
 }
 
+// ---- Week navigation ----
+const currentWeekStart = ref(startOfWeek(new Date()))
+const weekLabel = computed(() => {
+  const mon = currentWeekStart.value
+  const sun = addDays(mon, 6)
+  const opts = { month: 'short', day: 'numeric' }
+  return `${mon.toLocaleDateString(undefined, opts)} – ${sun.toLocaleDateString(undefined, opts)}`
+})
+const headerDays = computed(() => {
+  const days = []
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(currentWeekStart.value, i)
+    days.push({ key: dateKey(d), date: d, label: labelFor(d) })
+  }
+  return days
+})
+function prevWeek() { currentWeekStart.value = addDays(currentWeekStart.value, -7) }
+function nextWeek() { currentWeekStart.value = addDays(currentWeekStart.value, 7) }
+function goToToday() { currentWeekStart.value = startOfWeek(new Date()) }
+
+// ---- Grouping (rows) ----
+const GROUPS = [
+  { value: 'project_code', label: 'Project' },
+  { value: 'activity', label: 'Activity' },
+]
+const groupBy = ref('project_code')
+
 // ---- State ----
-const lanes = ref([]) // [{ key, date, label, cards: [] }]
+const swimlanes = ref([])
 const loading = ref(false)
 const error = ref('')
-
-// Build current week (Mon–Sun)
-function buildWeek() {
-  const monday = startOfWeek(new Date())
-  const arr = []
-  for (let i = 0; i < 7; i++) {
-    const d = addDays(monday, i)
-    arr.push({ key: dateKey(d), date: d, label: labelFor(d), cards: [] })
-  }
-  lanes.value = arr
-}
-function clearLaneCards() { for (const lane of lanes.value) lane.cards = [] }
 
 function mapEntryToCard(e) {
   return {
@@ -65,23 +77,46 @@ function mapEntryToCard(e) {
     seconds: e.seconds || 0
   }
 }
-function assignCardsToLanes(entries) {
-  clearLaneCards()
-  const byKey = new Map(lanes.value.map(l => [l.key, l]))
-  for (const e of entries) {
-    const k = laneKeyFromISO(e.start_utc)
-    const lane = byKey.get(k)
-    if (lane) lane.cards.push(mapEntryToCard(e))
+
+function buildEmptySwimlane(key, title) {
+  return {
+    key,
+    title,
+    columns: headerDays.value.map(d => ({ dayKey: d.key, cards: [] }))
   }
+}
+
+function assignCardsToGrid(entries) {
+  const lanesMap = new Map()
+  const ensureLane = (k, t) => {
+    if (!lanesMap.has(k)) lanesMap.set(k, buildEmptySwimlane(k, t))
+    return lanesMap.get(k)
+  }
+
+  for (const e of entries) {
+    const k = groupBy.value === 'project_code' ? (e.project_code || 'Ungrouped') : (e.activity || 'Ungrouped')
+    const lane = ensureLane(k, k)
+    const day = laneKeyFromISO(e.start_utc)
+    const col = lane.columns.find(c => c.dayKey === day)
+    if (col) col.cards.push(mapEntryToCard(e))
+  }
+
+  if (lanesMap.size === 0) lanesMap.set('Ungrouped', buildEmptySwimlane('Ungrouped', 'Ungrouped'))
+
+  swimlanes.value = Array.from(lanesMap.values())
   applyLocalOrder()
 }
 
 async function load() {
   loading.value = true; error.value = ''
   try {
-    const res = await fetch(`${API_BASE}/api/time-entries/`)
+    const monday = currentWeekStart.value
+    const nextMonday = addDays(monday, 7)
+    const qs = new URLSearchParams({ user_id: userId, from: monday.toISOString(), to: nextMonday.toISOString() }).toString()
+    const res = await fetch(`${API_BASE}/api/time-entries/?${qs}`)
     if (!res.ok) throw new Error(await res.text())
-    assignCardsToLanes(await res.json())
+    const data = await res.json()
+    assignCardsToGrid(data)
   } catch (e) {
     error.value = String(e)
   } finally {
@@ -89,37 +124,36 @@ async function load() {
   }
 }
 
-// Persist order per lane
-function onReorder(lane) {
-  localStorage.setItem(`logger.cardOrder:${lane.key}`, JSON.stringify(lane.cards.map(c => c.id)))
+// Persist order per cell (week + group + lane + day)
+function orderKey(laneKey, dayKey) {
+  const wk = `${currentWeekStart.value.getFullYear()}-${pad(currentWeekStart.value.getMonth()+1)}-${pad(currentWeekStart.value.getDate())}`
+  return `logger.cardOrder:${wk}:${groupBy.value}:${laneKey}:${dayKey}`
+}
+function onReorderCell(lane, dayKey) {
+  const ids = lane.columns.find(c => c.dayKey === dayKey)?.cards.map(c => c.id) || []
+  localStorage.setItem(orderKey(lane.key, dayKey), JSON.stringify(ids))
 }
 function applyLocalOrder() {
-  for (const lane of lanes.value) {
-    const order = JSON.parse(localStorage.getItem(`logger.cardOrder:${lane.key}`) || '[]')
-    if (!order.length) continue
-    const byId = new Map(lane.cards.map(c => [c.id, c]))
-    const reordered = []
-    for (const id of order) if (byId.has(id)) reordered.push(byId.get(id))
-    for (const c of lane.cards) if (!order.includes(c.id)) reordered.push(c)
-    lane.cards = reordered
+  for (const lane of swimlanes.value) {
+    for (const col of lane.columns) {
+      const order = JSON.parse(localStorage.getItem(orderKey(lane.key, col.dayKey)) || '[]')
+      if (!order.length) continue
+      const byId = new Map(col.cards.map(c => [c.id, c]))
+      const reordered = []
+      for (const id of order) if (byId.has(id)) reordered.push(byId.get(id))
+      for (const c of col.cards) if (!order.includes(c.id)) reordered.push(c)
+      col.cards = reordered
+    }
   }
 }
 
-function ensureTempId(card) {
-  if (!card.id) {
-    card.id = (crypto?.randomUUID?.() || `tmp_${Date.now()}_${Math.random().toString(16).slice(2)}`)
-  }
-}
-
+// Create / Update / Delete
 async function saveCard(payload) {
-  // If this is a new unsaved card, force a POST
   if (payload.id && String(payload.id).startsWith('tmp_')) payload.id = null
 
   if (payload.id) {
     const res = await fetch(`${API_BASE}/api/time-entries/${payload.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
         project_code: payload.project_code || payload.projectCode,
         activity: payload.activity,
         start_utc: payload.start_utc,
@@ -130,9 +164,7 @@ async function saveCard(payload) {
     if (!res.ok) return alert(`Failed to update: ${await res.text()}`)
   } else {
     const res = await fetch(`${API_BASE}/api/time-entries/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
         user_id: userId,
         project_code: payload.project_code || payload.projectCode,
         activity: payload.activity,
@@ -146,9 +178,9 @@ async function saveCard(payload) {
   await load()
 }
 
-async function deleteCard(lane, card) {
+async function deleteCard(lane, col, card) {
   if (!card.id || String(card.id).startsWith('tmp_')) {
-    lane.cards = lane.cards.filter(c => c !== card)
+    col.cards = col.cards.filter(c => c !== card)
     return
   }
   const res = await fetch(`${API_BASE}/api/time-entries/${card.id}`, { method: 'DELETE' })
@@ -156,120 +188,196 @@ async function deleteCard(lane, card) {
   await load()
 }
 
-function addCard(lane) {
+function addCard(lane, col) {
   const now = new Date()
-  const hm = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`
-
-  // Default new card to a 30-minute duration
-  const startLocal = new Date(`${lane.key}T${hm}`)       // local time
+  const hm = `${pad(now.getHours())}:${pad(now.getMinutes())}`
+  const startLocal = new Date(`${col.dayKey}T${hm}`)
   const endLocal   = new Date(startLocal.getTime() + 30 * 60000)
 
   const card = {
     id: (crypto?.randomUUID?.() || `tmp_${Date.now()}_${Math.random().toString(16).slice(2)}`),
     jobTitle: '',
-    projectCode: '',
-    activity: '',
+    projectCode: groupBy.value === 'project_code' ? lane.title : '',
+    activity: groupBy.value === 'activity' ? lane.title : '',
     description: '',
     notes: '',
     start_utc: startLocal.toISOString(),
     end_utc: endLocal.toISOString()
   }
-  lane.cards.unshift(card)
+  col.cards.unshift(card)
 }
 
-// Fired on cross-lane and in-lane changes
-function onLaneChange(lane, evt) {
+// Handle drags across rows/columns
+function onCellChange(lane, col, evt) {
   if (evt?.added) {
     const card = evt.added.element
-    // Adjust date to target lane, keep the time-of-day
     const startHM = timeHMFromISO(card.start_utc || new Date().toISOString())
     const endHM   = timeHMFromISO(card.end_utc || startHM)
-    card.start_utc = composeISOFromLaneAndTime(lane.key, startHM)
-    card.end_utc   = composeISOFromLaneAndTime(lane.key, endHM)
+    card.start_utc = composeISOFromLaneAndTime(col.dayKey, startHM)
+    card.end_utc   = composeISOFromLaneAndTime(col.dayKey, endHM)
 
-    // Persist only if this card already exists on the server
+    if (groupBy.value === 'project_code') card.project_code = lane.title
+    if (groupBy.value === 'activity')     card.activity     = lane.title
+
     if (card.id && !String(card.id).startsWith('tmp_')) {
       saveCard(card)
     }
   }
-  onReorder(lane)
+  onReorderCell(lane, col.dayKey)
 }
 
 // Totals
-function laneHours(lane) {
-  return lane.cards.reduce((sum, c) => sum + hoursBetween(c.start_utc, c.end_utc), 0)
+function colHours(dayKey) {
+  let sum = 0
+  for (const lane of swimlanes.value) {
+    const col = lane.columns.find(c => c.dayKey === dayKey)
+    if (col) sum += col.cards.reduce((s, c) => s + hoursBetween(c.start_utc, c.end_utc), 0)
+  }
+  return sum
 }
-const weeklyHours = computed(() => lanes.value.reduce((a, l) => a + laneHours(l), 0))
+function laneHours(lane) {
+  return lane.columns.reduce((tot, c) => tot + c.cards.reduce((s, x) => s + hoursBetween(x.start_utc, x.end_utc), 0), 0)
+}
+const weeklyHours = computed(() => headerDays.value.reduce((tot, d) => tot + colHours(d.key), 0))
+const weeklyPct = computed(() => Math.min(1, weeklyHours.value / TARGET_WEEKLY_HOURS))
 
-onMounted(() => { buildWeek(); load() })
+// Effects
+onMounted(load)
+watch([currentWeekStart, groupBy], () => { load() })
 </script>
 
 <template>
   <section class="board">
     <header class="board__header">
-      <h1>Week</h1>
-      <div class="totals"><strong>Weekly Total: {{ weeklyHours.toFixed(2) }} h</strong></div>
+      <div class="nav">
+        <button type="button" @click="prevWeek" title="Previous week">◀︎</button>
+        <button type="button" @click="goToToday" title="This week">This Week</button>
+        <button type="button" @click="nextWeek" title="Next week">▶︎</button>
+        <span class="range">{{ weekLabel }}</span>
+      </div>
+      <div class="toolbar">
+        <label class="group">
+          Group by
+          <select v-model="groupBy">
+            <option v-for="g in GROUPS" :key="g.value" :value="g.value">{{ g.label }}</option>
+          </select>
+        </label>
+        <div class="goal">
+          <div class="bar"><i :style="{ width: (weeklyPct*100)+'%' }"></i></div>
+          <span>{{ weeklyHours.toFixed(1) }} / {{ TARGET_WEEKLY_HOURS }} h</span>
+        </div>
+      </div>
     </header>
 
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="loading">Loading…</p>
 
-    <div class="lanes">
-      <div v-for="lane in lanes" :key="lane.key" class="lane">
-        <div class="lane__header">
-          <div class="lane__title">{{ lane.label }}</div>
-          <div class="lane__hours">{{ laneHours(lane).toFixed(2) }} h</div>
-          <button class="lane__add" type="button" @click="addCard(lane)">+ Add</button>
+    <!-- Scroller keeps header row and columns aligned on all widths -->
+    <div class="board__scroller">
+      <div class="grid">
+        <!-- Header row -->
+        <div class="cell cell--head cell--rowhead"></div>
+        <div v-for="d in headerDays" :key="d.key" class="cell cell--head">
+          <div class="dayhead">
+            <strong>{{ d.label }}</strong>
+            <small>{{ colHours(d.key).toFixed(1) }} h</small>
+          </div>
         </div>
 
-        <draggable
-          v-model="lane.cards"
-          item-key="id"
-          :animation="200"
-          handle=".handle"
-          class="lane__list"
-          :group="{ name: 'cards', pull: true, put: true }"
-          @change="onLaneChange(lane, $event)"
-          @end="onReorder(lane)"
-        >
-          <template #item="{ element }">
-            <TimeCard :card="element" @save="saveCard" @delete="c => deleteCard(lane, c)" />
+        <!-- Swimlane rows -->
+        <template v-for="lane in swimlanes" :key="lane.key">
+          <!-- Row header cell -->
+          <div class="cell cell--rowhead">
+            <div class="lanehead">
+              <strong>{{ lane.title }}</strong>
+              <small>{{ laneHours(lane).toFixed(1) }} h</small>
+            </div>
+          </div>
+
+          <!-- Day cells -->
+          <template v-for="col in lane.columns" :key="lane.key + ':' + col.dayKey">
+            <div class="cell">
+              <div class="cell__actions">
+                <button class="mini" @click="addCard(lane, col)" title="Add card to this cell">＋</button>
+              </div>
+              <draggable
+                v-model="col.cards"
+                item-key="id"
+                :animation="160"
+                handle=".handle"
+                class="droplist"
+                :group="{ name: 'cards', pull: true, put: true }"
+                ghost-class="drag-ghost"
+                chosen-class="drag-chosen"
+                drag-class="drag-dragging"
+                @change="onCellChange(lane, col, $event)"
+                @end="onReorderCell(lane, col.dayKey)"
+              >
+                <template #item="{ element }">
+                  <TimeCard :card="element" @save="saveCard" @delete="c => deleteCard(lane, col, c)" />
+                </template>
+              </draggable>
+            </div>
           </template>
-        </draggable>
+        </template>
       </div>
     </div>
   </section>
 </template>
 
 <style scoped>
-.board { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
-.board__header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
-.totals { font-size: .95rem; color: #111827; }
-.lanes {
+.board { max-width: var(--container); margin: 0 auto; padding: 12px; }
+.board__header {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px;
+  position: sticky; top: 0; z-index: 10; padding: 10px 0 12px; background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.nav { display: flex; align-items: center; gap: 6px; }
+.nav button {
+  padding: .36rem .55rem; border: 1px solid var(--border); background: var(--panel); border-radius: 10px; cursor: pointer;
+}
+.range { margin-left: .4rem; font-weight: 700; color: var(--text); }
+.toolbar { display: flex; align-items: center; gap: 12px; }
+.group { display: flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 600; }
+select { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: .3rem .45rem; }
+.goal { display: flex; align-items: center; gap: 8px; }
+.goal .bar { width: 180px; height: 8px; border-radius: 999px; background: #e2e8f0; overflow: hidden; border: 1px solid var(--border); }
+.goal .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--primary), var(--accent)); }
+.goal span { color: var(--muted); font-weight: 700; }
+
+/* Scroller remains for very small viewports, but 7 cols fit at typical widths */
+.board__scroller { overflow: auto; padding-bottom: 8px; }
+.grid {
+  --rowhead-w: 160px;            /* compact row header */
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: .8rem;
+  grid-template-columns: var(--rowhead-w) repeat(7, 1fr); /* always fits container width */
+  gap: 8px;                      /* tighter gaps */
   align-items: start;
+  padding: 8px 0;
 }
-.lane {
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: .5rem;
-  min-height: 120px;
+.cell {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  min-height: 100px;             /* slightly shorter cells */
+  position: relative;
 }
-.lane__header {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  align-items: center;
-  gap: .4rem;
-  margin-bottom: .5rem;
-}
-.lane__title { font-weight: 600; }
-.lane__hours { font-size: .9rem; color: #374151; }
-.lane__add {
-  padding: .35rem .55rem; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; cursor: pointer;
-}
-.lane__list { display: grid; gap: .6rem; min-height: 60px; }
+.cell--head { background: transparent; border: none; min-height: auto; }
+.cell--rowhead { position: sticky; left: 0; z-index: 5; background: var(--panel); border-right: 1px solid var(--border); }
+
+.dayhead { display: flex; align-items: baseline; justify-content: space-between; padding: 8px 6px; border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 700; font-size: .95rem; }
+.lanehead { display: flex; align-items: baseline; justify-content: space-between; padding: 10px 8px; position: sticky; left: 0; font-weight: 700; font-size: .95rem; }
+
+.cell__actions { position: absolute; top: 6px; right: 6px; }
+.cell__actions .mini { font-size: 16px; padding: 0 .35rem; line-height: 1.1; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--border); cursor: pointer; color: var(--text); }
+.cell__actions .mini:hover { background: #eaf2ff; }
+
+.droplist { display: grid; gap: 8px; padding: 8px; max-height: calc(100vh - 220px); overflow: auto; }
+
+/* Drag classes for better feedback */
+:global(.drag-ghost)    { opacity: .6; transform: rotate(2deg); }
+:global(.drag-chosen)   { box-shadow: var(--shadow-md) !important; }
+:global(.drag-dragging) { cursor: grabbing; }
+
 .error { color: #b91c1c; }
 </style>
