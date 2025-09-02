@@ -334,7 +334,7 @@ watch([currentWeekStart, groupBy], () => { load() })
 }
 .nav { display: flex; align-items: center; gap: 6px; }
 .nav button {
-  padding: .36rem .55rem; border: 1px solid var(--border); background: var(--panel); border-radius: 10px; cursor: pointer;
+  padding: .36rem .55rem; color:rgb(25, 40, 209); border: 1px solid var(--border); background: var(--panel); border-radius: 10px; cursor: pointer;
 }
 .range { margin-left: .4rem; font-weight: 700; color: var(--text); }
 .toolbar { display: flex; align-items: center; gap: 12px; }
@@ -370,7 +370,7 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 
 .cell__actions { position: absolute; top: 6px; right: 6px; }
 .cell__actions .mini { font-size: 16px; padding: 0 .35rem; line-height: 1.1; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--border); cursor: pointer; color: var(--text); }
-.cell__actions .mini:hover { background: #eaf2ff; }
+.cell__actions .mini:hover { background: #394860; }
 
 .droplist { display: grid; gap: 8px; padding: 8px; max-height: calc(100vh - 220px); overflow: auto; }
 
