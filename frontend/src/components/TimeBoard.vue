@@ -239,7 +239,29 @@ function laneHours(lane) {
   return lane.columns.reduce((tot, c) => tot + c.cards.reduce((s, x) => s + hoursBetween(x.start_utc, x.end_utc), 0), 0)
 }
 const weeklyHours = computed(() => headerDays.value.reduce((tot, d) => tot + colHours(d.key), 0))
-const weeklyPct = computed(() => Math.min(1, weeklyHours.value / TARGET_WEEKLY_HOURS))
+const weeklyPct = computed(() => Math.min(1, (TARGET_WEEKLY_HOURS ? (weeklyHours.value / TARGET_WEEKLY_HOURS) : 0)))
+const todayLabel = computed(() => todayHeader.value ? todayHeader.value.label : '')
+
+// ---- Focus: enlarge the current day's column at the top ----
+const isSameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+const todayHeader = computed(() => headerDays.value.find(d => isSameDay(d.date, new Date())))
+const todayKey = computed(() => todayHeader.value?.key || null)
+const showFocus = computed(() => !!todayKey.value && isSameDay(currentWeekStart.value, startOfWeek(new Date())))
+
+// Per-day plan note (local persistence for now; can be moved to backend later)
+const dailyPlan = ref('')
+function planKey(dayKey) { return `logger.dailyPlan:${userId}:${dayKey}` }
+watch(todayKey, (k) => { if (k) dailyPlan.value = localStorage.getItem(planKey(k)) || '' }, { immediate: true })
+watch(dailyPlan, (v) => { const k = todayKey.value; if (k != null) localStorage.setItem(planKey(k), v) })
+
+// Aggregate today's cards across all swimlanes
+const todayLanes = computed(() => {
+  if (!todayKey.value) return []
+  return swimlanes.value.map(lane => ({
+    lane,
+    col: lane.columns.find(c => c.dayKey === todayKey.value) || { dayKey: todayKey.value, cards: [] },
+  }))
+})
 
 // Effects
 onMounted(load)
@@ -268,6 +290,54 @@ watch([currentWeekStart, groupBy], () => { load() })
         </div>
       </div>
     </header>
+    <section v-if="showFocus" class="focus focus--inboard">
+      <header class="focus__header">
+        <strong>Today — {{ todayLabel }}</strong>
+        <span class="focus__hours">{{ colHours(todayKey).toFixed(1) }} h</span>
+      </header>
+      <div class="focus__layout">
+        <aside class="focus__plan">
+          <label class="focus__label">Today's plan</label>
+          <textarea
+            v-model="dailyPlan"
+            rows="6"
+            class="focus__textarea"
+            placeholder='e.g., "this is what I plan to work on today"'
+          ></textarea>
+          <small class="focus__hint">Saved locally for now</small>
+        </aside>
+
+        <div class="focus__col">
+          <div
+            v-for="pair in todayLanes"
+            :key="pair.lane.key"
+            class="focus__lane"
+          >
+            <div class="focus__lanehead">
+              <strong>{{ pair.lane.title }}</strong>
+              <button class="mini" @click="addCard(pair.lane, pair.col)" title="Add card">＋</button>
+            </div>
+            <draggable
+              v-model="pair.col.cards"
+              item-key="id"
+              :animation="160"
+              handle=".handle"
+              class="focus__droplist"
+              :group="{ name: 'cards', pull: true, put: true }"
+              ghost-class="drag-ghost"
+              chosen-class="drag-chosen"
+              drag-class="drag-dragging"
+              @change="onCellChange(pair.lane, pair.col, $event)"
+              @end="onReorderCell(pair.lane, pair.col.dayKey)"
+            >
+              <template #item="{ element }">
+                <TimeCard :card="element" @save="saveCard" @delete="c => deleteCard(pair.lane, pair.col, c)" />
+              </template>
+            </draggable>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="loading">Loading…</p>
@@ -380,4 +450,37 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 :global(.drag-dragging) { cursor: grabbing; }
 
 .error { color: #b91c1c; }
+
+/* --- Focus (enlarged current-day column) --- */
+.focus { width: 100%; margin: 12px 0 16px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+.focus--inboard { max-width: 100%; }
+.focus__header { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.focus__hours { color: var(--muted); font-weight: 700; }
+.focus__layout { display: grid; grid-template-columns: 340px 1fr; gap: 16px; padding: 12px; }
+@media (max-width: 1100px) { .focus__layout { grid-template-columns: 1fr; } }
+.focus__plan { display: grid; gap: 8px; }
+.focus__label { font-weight: 700; color: var(--muted); }
+.focus__textarea { width: 100%; min-height: 160px; resize: vertical; padding: .6rem .7rem; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); color: var(--text); }
+.focus__hint { color: var(--muted); }
+.focus__col { display: grid; gap: 12px; }
+.focus__lane { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
+.focus__lanehead { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--border); font-weight: 700; }
+.focus__droplist { display: grid; gap: 10px; padding: 10px; max-height: none; }
+.focus :deep(.tcard) { box-shadow: var(--shadow-md); }
+
+/* --- Focus (enlarged current-day column) --- */
+.focus { max-width: var(--container); margin: 0 auto 16px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+.focus__header { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.focus__hours { color: var(--muted); font-weight: 700; }
+.focus__layout { display: grid; grid-template-columns: 280px 1fr; gap: 12px; padding: 12px; }
+@media (max-width: 900px) { .focus__layout { grid-template-columns: 1fr; } }
+.focus__plan { display: grid; gap: 6px; }
+.focus__label { font-weight: 700; color: var(--muted); }
+.focus__textarea { width: 100%; min-height: 140px; resize: vertical; padding: .6rem .7rem; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); color: var(--text); }
+.focus__hint { color: var(--muted); }
+.focus__col { display: grid; gap: 12px; }
+.focus__lane { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
+.focus__lanehead { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--border); font-weight: 700; }
+.focus__droplist { display: grid; gap: 10px; padding: 10px; max-height: none; }
+.focus :deep(.tcard) { transform: scale(1.02); box-shadow: var(--shadow-md); }
 </style>

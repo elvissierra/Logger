@@ -1,4 +1,5 @@
 .logger
 __pycache__
 .DS_Store
-ß
+.env
+versions/
