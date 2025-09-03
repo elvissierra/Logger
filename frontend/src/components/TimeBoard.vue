@@ -101,10 +101,18 @@ function assignCardsToGrid(entries) {
     if (col) col.cards.push(mapEntryToCard(e))
   }
 
-  if (lanesMap.size === 0) lanesMap.set('Ungrouped', buildEmptySwimlane('Ungrouped', 'Ungrouped'))
-
-  swimlanes.value = Array.from(lanesMap.values())
-  applyLocalOrder()
+const customs = loadCustomLanes()
+// Ensure all custom lanes exist (even if no entries yet)
+for (const name of customs) {
+  if (!lanesMap.has(name)) lanesMap.set(name, buildEmptySwimlane(name, name))
+}
+// Order: custom lanes first (by saved order), then the rest
+const ordered = []
+for (const name of customs) ordered.push(lanesMap.get(name))
+for (const [k, v] of lanesMap) if (!customs.includes(k)) ordered.push(v)
+if (!ordered.length) ordered.push(buildEmptySwimlane('Ungrouped', 'Ungrouped'))
+swimlanes.value = ordered
+applyLocalOrder()
 }
 
 async function load() {
@@ -145,6 +153,22 @@ function applyLocalOrder() {
       col.cards = reordered
     }
   }
+}
+function customLanesKey() { return `logger.customLanes:${groupBy.value}` }
+function loadCustomLanes() {
+  try { return JSON.parse(localStorage.getItem(customLanesKey()) || '[]') } catch { return [] }
+}
+function saveCustomLanes(names) { localStorage.setItem(customLanesKey(), JSON.stringify(names)) }
+function addLane() {
+  const label = window.prompt(`Add ${groupBy.value === 'project_code' ? 'Project' : 'Activity'} name:`)?.trim()
+  if (!label) return
+  const exists = swimlanes.value.some(l => l.key === label || l.title === label)
+  if (!exists) {
+    const lane = buildEmptySwimlane(label, label)
+    swimlanes.value = [lane, ...swimlanes.value]
+  }
+  const names = loadCustomLanes()
+  if (!names.includes(label)) { names.push(label); saveCustomLanes(names) }
 }
 
 // Create / Update / Delete
@@ -204,6 +228,7 @@ function addCard(lane, col) {
     start_utc: startLocal.toISOString(),
     end_utc: endLocal.toISOString()
   }
+  card.__new = true
   col.cards.unshift(card)
 }
 
@@ -288,6 +313,9 @@ watch([currentWeekStart, groupBy], () => { load() })
           <div class="bar"><i :style="{ width: (weeklyPct*100)+'%' }"></i></div>
           <span>{{ weeklyHours.toFixed(1) }} / {{ TARGET_WEEKLY_HOURS }} h</span>
         </div>
+        <button type="button" @click="addLane">
+          {{ groupBy === 'project_code' ? 'Add Project' : 'Add Activity' }}
+        </button>
       </div>
     </header>
     <section v-if="showFocus" class="focus focus--inboard">
