@@ -1,61 +1,76 @@
-from __future__ import annotations
-
-import os
-import sys
 from logging.config import fileConfig
+import os
 
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 
-# Alembic Config
+# Lightweight fallback loader so Alembic can read app/.env when running from CLI
+def _fallback_database_url_from_dotenv() -> str | None:
+    # Resolve .../app/migrations/env.py -> .../app/.env
+    here = os.path.abspath(os.path.dirname(__file__))
+    env_path = os.path.abspath(os.path.join(here, "..", ".env"))
+    if not os.path.exists(env_path):
+        return None
+    try:
+        with open(env_path, "r", encoding="utf-8") as fh:
+            for raw in fh:
+                line = raw.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("DATABASE_URL"):
+                    _, val = line.split("=", 1)
+                    val = val.strip().strip('"').strip("'")
+                    return val
+    except Exception:
+        return None
+    return None
+
+# --- Import your SQLAlchemy Base + models so Alembic "sees" them
+from app.core.database import Base
+# Ensure model modules are imported to register tables/indexes on Base.metadata
+from app.models import time_entry  # noqa: F401  (import side-effect registers model)
+
+# this is the Alembic Config object
 config = context.config
 
-# Logging
+# Interpret the config file for Python logging.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# --- Ensure we can import our app package ---
-# running from backend/ normally has this path already, but make it explicit
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-if BASE_DIR not in sys.path:
-    sys.path.insert(0, BASE_DIR)
-
-# Import Base and models so metadata is populated
-from app.core.database import Base  # noqa: E402
-# import model modules to register tables on Base.metadata
-from app.models import time_entry as _time_entry  # noqa: F401,E402
-
-# Target metadata for autogenerate
+# Provide metadata to Alembic's autogenerate
 target_metadata = Base.metadata
 
-# Prefer DATABASE_URL env var over alembic.ini
-db_url = os.getenv("DATABASE_URL")
-if db_url:
-    config.set_main_option("sqlalchemy.url", db_url)
+def get_url() -> str:
+    # Prefer environment variable so CI/CD and shells can override
+    url = os.getenv("DATABASE_URL")
+    if url:
+        return url
+    # Fallback to app/.env for local developer convenience
+    url = _fallback_database_url_from_dotenv()
+    if url:
+        return url
+    raise RuntimeError("DATABASE_URL is not set")
 
-
-def run_migrations_offline() -> None:
+def run_migrations_offline():
     """Run migrations in 'offline' mode."""
-    url = config.get_main_option("sqlalchemy.url")
     context.configure(
-        url=url,
+        url=get_url(),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        compare_type=True,
-        compare_server_default=True,
+        compare_type=True,             # detect type changes
+        compare_server_default=True,   # detect default changes
     )
     with context.begin_transaction():
         context.run_migrations()
 
-
-def run_migrations_online() -> None:
+def run_migrations_online():
     """Run migrations in 'online' mode."""
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        config.get_section(config.config_ini_section),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
-        future=True,
+        url=get_url(),
     )
 
     with connectable.connect() as connection:
@@ -67,7 +82,6 @@ def run_migrations_online() -> None:
         )
         with context.begin_transaction():
             context.run_migrations()
-
 
 if context.is_offline_mode():
     run_migrations_offline()
