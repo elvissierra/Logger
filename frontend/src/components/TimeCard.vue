@@ -1,8 +1,11 @@
 
 <script setup>
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
 
-const props = defineProps({ card: { type: Object, required: true } })
+const props = defineProps({
+  card: { type: Object, required: true },
+  openOnMount: { type: Boolean, default: false }
+})
 const emit = defineEmits(['save', 'delete'])
 
 const editing = ref(false)
@@ -22,6 +25,15 @@ watch(() => props.card, (v) => {
     local.value.end_local = toLocalInput(v.end_utc)
   }
 }, { deep: true })
+// Auto-open editor for brand-new cards or when parent requests it
+onMounted(() => {
+  const tmp = props.card && String(props.card.id || '').startsWith('tmp_')
+  if (props.openOnMount || tmp) {
+    editing.value = true
+    local.value.start_local = local.value.start_local || toLocalInput(local.value.start_utc)
+    local.value.end_local   = local.value.end_local   || toLocalInput(local.value.end_utc)
+  }
+})
 // ISO -> datetime-local (input value)
 function toLocalInput(iso) {
   if (!iso) return ''
