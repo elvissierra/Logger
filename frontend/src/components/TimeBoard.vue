@@ -2,6 +2,10 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import draggable from 'vuedraggable'
 import TimeCard from './TimeCard.vue'
+import { onUnmounted } from 'vue'
+
+onMounted(() => { load(); window.addEventListener('keydown', onKey) })
+onUnmounted(() => window.removeEventListener('keydown', onKey))
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000'
 const userId = 'user-123' // TODO: wire real auth later
@@ -88,6 +92,29 @@ const groupBy = ref('project_code')
 const swimlanes = ref([])
 const loading = ref(false)
 const error = ref('')
+// --- toasts ---
+const toasts = ref([])
+function notify(msg, type='info', ttl=3000){
+  const id = Math.random().toString(36).slice(2)
+  toasts.value.push({id,msg,type})
+  setTimeout(()=>{ toasts.value = toasts.value.filter(t=>t.id!==id) }, ttl)
+}
+// --- shortcuts ---
+function onKey(e){
+  const tag = (e.target && e.target.tagName || '').toLowerCase()
+  if (tag==='input' || tag==='textarea' || (e.target && e.target.isContentEditable)) return
+  if (e.key==='n' || e.key==='N'){ e.preventDefault(); quickAddToday() }
+  else if (e.key==='?'){ e.preventDefault(); notify('Shortcuts: N = new card today, ←/→ = week nav, ? = help','info',4200) }
+  else if (e.key==='ArrowLeft'){ prevWeek(); e.preventDefault() }
+  else if (e.key==='ArrowRight'){ nextWeek(); e.preventDefault() }
+}
+function quickAddToday(){
+  if (!todayKey.value) goToToday()
+  const lane = swimlanes.value[0]
+  if (!lane){ addLane(); return }
+  const col = lane.columns.find(c=>c.dayKey===(todayKey.value||headerDays.value[0].key))
+  if (col) addCard(lane, col)
+}
 
 function mapEntryToCard(e) {
   const parsed = parsePriorityAndCleanNotes(e.notes || '')
@@ -331,6 +358,9 @@ watch([currentWeekStart, groupBy], () => { load() })
 
 <template>
   <section class="board">
+    <div class="toastbox">
+      <div v-for="t in toasts" :key="t.id" class="toast" :class="t.type">{{ t.msg }}</div>
+    </div>
     <header class="board__header">
       <div class="nav">
         <button type="button" @click="prevWeek" title="Previous week">◀︎</button>
@@ -461,6 +491,7 @@ watch([currentWeekStart, groupBy], () => { load() })
               <div class="cell__actions">
                 <button class="mini" @click="addCard(lane, col)" title="Add card to this cell">＋</button>
               </div>
+              <div v-if="!col.cards.length" class="cell__empty">No entries</div>
               <draggable
                 v-model="col.cards"
                 item-key="id"
@@ -525,6 +556,7 @@ watch([currentWeekStart, groupBy], () => { load() })
   cursor: pointer;
 }
 .mini:hover { background: var(--btn-blue-bg-hover); }
+.mini.icon { padding:.2rem; width:28px; height:28px; display:inline-grid; place-items:center; border-radius:10px; }
 .group { display: flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 600; }
 select { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: .3rem .45rem; }
 .goal { display: flex; align-items: center; gap: 8px; }
@@ -551,7 +583,7 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 }
 .cell--head { background: transparent; border: none; min-height: auto; }
 .cell--rowhead { position: sticky; left: 0; z-index: 5; background: var(--panel); border-right: 1px solid var(--border); }
-
+.cell__empty{ position:absolute; inset:0; display:grid; place-items:center; color:var(--muted); font-size:.9rem; pointer-events:none; }
 .dayhead { display: flex; align-items: baseline; justify-content: space-between; padding: 8px 6px; border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 700; font-size: .95rem; }
 .lanehead { display: flex; align-items: baseline; justify-content: space-between; padding: 10px 8px; font-weight: 700; font-size: .95rem; }
 .lanehead__title { display: flex; align-items: center; gap: 6px; }
@@ -574,12 +606,7 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 
 .droplist { display: grid; gap: 8px; padding: 8px; max-height: calc(100vh - 220px); overflow: auto; }
 /* Ensure TimeCard surfaces inside cells look like cards and don't “blend” into the cell */
-.droplist :deep(.tcard) {
-  background: #fff;
-  border-color: #cbd5e1;
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
-}
+.droplist :deep(.tcard){ background:#fff; border-color:#cbd5e1; box-shadow:var(--shadow-sm); overflow:hidden; }
 /* Drag classes for better feedback */
 :global(.drag-ghost)    { opacity: .6; transform: rotate(2deg); }
 :global(.drag-chosen)   { box-shadow: var(--shadow-md) !important; }
@@ -603,4 +630,9 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 .focus__lanehead { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--border); font-weight: 700; }
 .focus__droplist { display: grid; gap: 10px; padding: 10px; max-height: none; }
 .focus :deep(.tcard) { box-shadow: var(--shadow-md); }
+
+.toastbox{ position:sticky; top:8px; z-index:20; display:grid; gap:6px; justify-items:end; }
+.toast{ background:var(--panel); border:1px solid var(--border); color:var(--text); padding:.45rem .6rem; border-radius:10px; box-shadow:var(--shadow-sm); }
+.toast.success{ border-color:#16a34a; }
+.toast.error{ border-color:#ef4444; }
 </style>

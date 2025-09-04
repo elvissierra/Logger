@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, computed, onMounted } from 'vue'
+import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({
   card: { type: Object, required: true },
@@ -38,6 +38,13 @@ onMounted(() => {
   }
   if (!local.value.priority) local.value.priority = 'Normal'
 })
+function onKey(e){
+  if (!editing.value) return
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase()==='s'){ e.preventDefault(); onSave() }
+  else if (e.key==='Escape'){ e.preventDefault(); editing.value=false }
+}
+onMounted(()=>window.addEventListener('keydown', onKey))
+onUnmounted(()=>window.removeEventListener('keydown', onKey))
 
 // ISO -> datetime-local (input value)
 function toLocalInput(iso) {
@@ -136,6 +143,7 @@ function onDelete() { emit('delete', props.card) }
       </div>
       <div class="actions">
         <button type="button" class="primary" @click="onSave">Save</button>
+        <span class="hint">⌘/Ctrl+S</span>
         <button type="button" class="secondary" @click="editing=false">Cancel</button>
         <button type="button" class="danger" @click="onDelete">Delete</button>
       </div>
@@ -169,6 +177,7 @@ function onDelete() { emit('delete', props.card) }
 .prio.p-critical { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
 .icon { border: 1px solid var(--border, #e5e7eb); border-radius: 8px; background: var(--panel-2, #f3f4f6); cursor: pointer; padding: .25rem .4rem; }
 .icon:hover { background: #e9eef7; }
+.hint{ align-self:center; color:var(--muted); font-size:.85rem; margin-left:.25rem; }
 
 .tcard__body { color: var(--text, #374151); }
 .tcard__body p { margin: .25rem 0; word-break: break-word; }
