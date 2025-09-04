@@ -152,6 +152,7 @@ function onDelete() { emit('delete', props.card) }
   padding: .75rem .9rem;
   box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,.06));
   transition: box-shadow .15s ease, transform .08s ease, border-color .2s ease, background .2s ease;
+  overflow: hidden;
 }
 .tcard:hover { box-shadow: var(--shadow-md, 0 6px 16px rgba(0,0,0,.08)); border-color: color-mix(in srgb, var(--border, #e5e7eb) 70%, var(--primary, #5b8cff) 30%); }
 .tcard.editing { background: var(--panel, #f6f7fb); }
@@ -170,6 +171,7 @@ function onDelete() { emit('delete', props.card) }
 .icon:hover { background: #e9eef7; }
 
 .tcard__body { color: var(--text, #374151); }
+.tcard__body p { margin: .25rem 0; word-break: break-word; }
 .desc { margin: .2rem 0; color: var(--text, #111827); }
 .notes { margin: .2rem 0; color: var(--muted, #6b7280); }
 .meta { display: flex; align-items: center; gap: .4rem; color: var(--muted, #6b7280); font-size: .9rem; }

@@ -515,6 +515,16 @@ watch([currentWeekStart, groupBy], () => { load() })
   cursor: pointer;
 }
 .toolbar button:hover { background: var(--btn-blue-bg-hover); }
+/* Compact icon-sized buttons used for “…” and “＋” */
+.mini {
+  padding: .2rem .45rem;
+  border: 1px solid var(--border);
+  background: var(--btn-blue-bg);
+  color: rgb(25, 40, 209);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.mini:hover { background: var(--btn-blue-bg-hover); }
 .group { display: flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 600; }
 select { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: .3rem .45rem; }
 .goal { display: flex; align-items: center; gap: 8px; }
@@ -543,7 +553,7 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 .cell--rowhead { position: sticky; left: 0; z-index: 5; background: var(--panel); border-right: 1px solid var(--border); }
 
 .dayhead { display: flex; align-items: baseline; justify-content: space-between; padding: 8px 6px; border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 700; font-size: .95rem; }
-.lanehead { display: flex; align-items: baseline; justify-content: space-between; padding: 10px 8px; position: sticky; left: 0; font-weight: 700; font-size: .95rem; }
+.lanehead { display: flex; align-items: baseline; justify-content: space-between; padding: 10px 8px; font-weight: 700; font-size: .95rem; }
 .lanehead__title { display: flex; align-items: center; gap: 6px; }
 .lanehead__right { display: flex; align-items: center; gap: 6px; }
 .lanehead__desc { color: var(--muted); font-size: .85rem; padding: 0 8px 8px; }
@@ -560,11 +570,16 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 
 .focus__lanedesc { color: var(--muted); font-size: .85rem; padding: 6px 10px 0; }
 .cell__actions { position: absolute; top: 6px; right: 6px; }
-.cell__actions .mini { font-size: 16px; padding: 0 .35rem; line-height: 1.1; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--border); cursor: pointer; color: var(--text); }
-.cell__actions .mini:hover { background: #394860; }
+.cell__actions .mini { font-size: 16px; padding: .15rem .45rem; line-height: 1.1; }
 
 .droplist { display: grid; gap: 8px; padding: 8px; max-height: calc(100vh - 220px); overflow: auto; }
-
+/* Ensure TimeCard surfaces inside cells look like cards and don't “blend” into the cell */
+.droplist :deep(.tcard) {
+  background: #fff;
+  border-color: #cbd5e1;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
 /* Drag classes for better feedback */
 :global(.drag-ghost)    { opacity: .6; transform: rotate(2deg); }
 :global(.drag-chosen)   { box-shadow: var(--shadow-md) !important; }
