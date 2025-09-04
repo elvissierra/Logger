@@ -29,7 +29,15 @@ import TimeBoard from './components/TimeBoard.vue'
 :global(body) {
   margin: 0; background: var(--bg); color: var(--text);
   -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
-  font: 500 15px/1.5 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial;
+  font: 500 15px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
 }
 :global(#app) { min-height: 100dvh; }
+@media (prefers-color-scheme: dark) {
+  :global(:root) {
+    --bg:#0b1220; --panel:#0f172a; --panel-2:#111827;
+    --text:#e5e7eb; --muted:#94a3b8; --border:#243b5a;
+    --primary:#60a5fa; --primary-600:#3b82f6; --accent:#22d3ee;
+    --btn-blue-bg:#13223f; --btn-blue-bg-hover:#0f1b33;
+  }
+}
 </style>
