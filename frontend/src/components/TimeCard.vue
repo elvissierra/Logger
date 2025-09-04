@@ -3,9 +3,12 @@ import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({
   card: { type: Object, required: true },
-  openOnMount: { type: Boolean, default: false }
+  openOnMount: { type: Boolean, default: false },
+  runningId: { type: String, default: null },
+  nowTick: { type: Number, default: 0 }
 })
-const emit = defineEmits(['save', 'delete'])
+const emit = defineEmits(['save', 'delete', 'start', 'stop'])
+const isRunning = computed(() => props.runningId && props.card.id === props.runningId)
 
 const editing = ref(false)
 const local = ref(structuredClone(props.card))
@@ -61,9 +64,9 @@ function fromLocalInput(localStr) {
 }
 
 const durationHours = computed(() => {
-  if (!props.card.start_utc || !props.card.end_utc) return 0
+  if (!props.card.start_utc) return 0
   const s = new Date(props.card.start_utc).getTime()
-  const e = new Date(props.card.end_utc).getTime()
+  const e = isRunning.value ? (props.nowTick || Date.now()) : (props.card.end_utc ? new Date(props.card.end_utc).getTime() : s)
   return Math.max(0, (e - s) / 3600000)
 })
 
@@ -82,6 +85,8 @@ function onSave() {
   editing.value = false
 }
 function onDelete() { emit('delete', props.card) }
+function onStart(){ emit('start', props.card) }
+function onStop(){ emit('stop', props.card) }
 </script>
 
 <template>
@@ -93,7 +98,10 @@ function onDelete() { emit('delete', props.card) }
         <strong class="title">{{ card.jobTitle || card.projectCode || 'Untitled' }}</strong>
         <span class="chip" v-if="card.activity">{{ card.activity }}</span>
       </div>
-      <button class="icon" title="Edit" aria-label="Edit" @click="editing = !editing">✎</button>
+      <div class="actions__icons">
+        <button class="icon" :title="isRunning ? 'Stop' : 'Start'" :aria-label="isRunning ? 'Stop' : 'Start'" @click="isRunning ? onStop() : onStart()">{{ isRunning ? '■' : '▶︎' }}</button>
+        <button class="icon" title="Edit" aria-label="Edit" @click="editing = !editing">✎</button>
+      </div>
     </header>
 
     <section v-if="!editing" class="tcard__body" @dblclick="editing = true">
@@ -200,4 +208,5 @@ button:hover { background: #f0f2f6; }
 button:active { transform: translateY(1px); }
 button.primary { background: linear-gradient(180deg, var(--primary, #5b8cff), var(--primary-600, #3e6dff)); border-color: color-mix(in srgb, var(--border, #d1d5db) 40%, var(--primary, #5b8cff) 60%); color: #fff; }
 button.danger { border-color: #ef4444; color: #b91c1c; }
+ .actions__icons { display: flex; gap: .35rem; }
 </style>
