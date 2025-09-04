@@ -4,6 +4,79 @@ import draggable from 'vuedraggable'
 import TimeCard from './TimeCard.vue'
 import { onUnmounted } from 'vue'
 
+// --- Global ticking for live timers ---
+const nowTick = ref(Date.now())
+let _nowHandle = null
+onMounted(() => {
+  _nowHandle = setInterval(() => (nowTick.value = Date.now()), 1000)
+})
+onUnmounted(() => { if (_nowHandle) clearInterval(_nowHandle) })
+
+// --- Running timer pointer (client-side) ---
+function runningKey () { return `logger.runningEntry:${userId}` }
+const runningId = ref(localStorage.getItem(runningKey()))
+function setRunningId (id) {
+  runningId.value = id
+  if (id) localStorage.setItem(runningKey(), id)
+  else localStorage.removeItem(runningKey())
+}
+let _extendHandle = null
+async function stopRunningIfAny () {
+  if (!runningId.value) return null
+  const id = runningId.value
+  try {
+    const res = await fetch(`${API_BASE}/api/time-entries/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ end_utc: new Date().toISOString() })
+    })
+    if (!res.ok) notify(`Failed to stop timer: ${await res.text()}`, 'error')
+  } catch (e) {
+    notify(`Failed to stop timer: ${e?.message || e}`, 'error')
+  } finally {
+    if (_extendHandle) { clearInterval(_extendHandle); _extendHandle = null }
+    setRunningId(null)
+  }
+  await load()
+  return id
+}
+async function startTimer (seedCard) {
+  await stopRunningIfAny()
+  const now = new Date()
+  const inOneMin = new Date(now.getTime() + 60 * 1000)
+  const payload = {
+    user_id: userId,
+    project_code: seedCard.project_code || seedCard.projectCode || '',
+    activity: seedCard.activity || '',
+    start_utc: now.toISOString(),
+    end_utc: inOneMin.toISOString(),
+    notes: `[prio:${(seedCard.priority || 'Normal').toLowerCase()}]` + (seedCard.notes ? ` ${seedCard.notes}` : '')
+  }
+  const res = await fetch(`${API_BASE}/api/time-entries/`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  if (!res.ok) {
+    return notify(`Failed to start timer: ${await res.text()}`, 'error')
+  }
+  const created = await res.json()
+  setRunningId(created.id)
+  // Periodically extend end_utc so duration grows while the tab is open
+  _extendHandle = setInterval(async () => {
+    try {
+      await fetch(`${API_BASE}/api/time-entries/${created.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ end_utc: new Date().toISOString() })
+      })
+    } catch {}
+  }, 30000)
+  await load()
+  notify('Timer started', 'success')
+}
+async function stopTimer () {
+  const id = await stopRunningIfAny()
+  if (id) notify('Timer stopped', 'success')
+}
+
 onMounted(() => { load(); window.addEventListener('keydown', onKey) })
 onUnmounted(() => window.removeEventListener('keydown', onKey))
 
@@ -179,6 +252,13 @@ async function load() {
     if (!res.ok) throw new Error(await res.text())
     const data = await res.json()
     assignCardsToGrid(data)
+    // If running id is no longer in the fetched set (e.g., week navigation), clear pointer
+    try {
+      if (runningId.value) {
+        const found = swimlanes.value.some(l => l.columns.some(c => c.cards.some(x => x.id === runningId.value)))
+        if (!found) setRunningId(null)
+      }
+    } catch {}
   } catch (e) {
     error.value = String(e)
   } finally {
@@ -241,7 +321,7 @@ async function saveCard(payload) {
         notes: `[prio:${(payload.priority || 'Normal').toLowerCase()}]` + (payload.notes ? ` ${payload.notes}` : '')
       })
     })
-    if (!res.ok) return alert(`Failed to update: ${await res.text()}`)
+    if (!res.ok) return notify(`Failed to update: ${await res.text()}`, 'error')
   } else {
    const res = await fetch(`${API_BASE}/api/time-entries/`, {
      method: 'POST',
@@ -255,7 +335,7 @@ async function saveCard(payload) {
        notes: `[prio:${(payload.priority || 'Normal').toLowerCase()}]` + (payload.notes ? ` ${payload.notes}` : '')
      })
    })
-    if (!res.ok) return alert(`Failed to create: ${await res.text()}`)
+    if (!res.ok) return notify(`Failed to update: ${await res.text()}`, 'error')
   }
   await load()
 }
@@ -266,7 +346,7 @@ async function deleteCard(lane, col, card) {
     return
   }
   const res = await fetch(`${API_BASE}/api/time-entries/${card.id}`, { method: 'DELETE' })
-  if (!res.ok) return alert(`Failed to delete: ${await res.text()}`)
+  if (!res.ok) return notify(`Failed to update: ${await res.text()}`, 'error')
   await load()
 }
 
@@ -352,7 +432,7 @@ const todayLanes = computed(() => {
 })
 
 // Effects
-onMounted(load)
+
 watch([currentWeekStart, groupBy], () => { load() })
 </script>
 
@@ -417,8 +497,8 @@ watch([currentWeekStart, groupBy], () => { load() })
                 </span>
               </div>
               <div class="lane-actions">
-                <button class="mini" @click="editLaneMeta(pair.lane)" title="Edit project settings">⋯</button>
-                <button class="mini" @click="addCard(pair.lane, pair.col)" title="Add card">＋</button>
+                <button class="mini icon" @click="editLaneMeta(pair.lane)" title="Edit project settings">⋯</button>
+                <button class="mini icon" @click="addCard(pair.lane, pair.col)" title="Add card">＋</button>
               </div>
             </div>
             <div v-if="getLaneMeta(pair.lane.key).description" class="focus__lanedesc">
@@ -438,7 +518,10 @@ watch([currentWeekStart, groupBy], () => { load() })
               @end="onReorderCell(pair.lane, pair.col.dayKey)"
             >
               <template #item="{ element }">
-                <TimeCard :card="element" :open-on-mount="element.__new === true" @save="saveCard" @delete="c => deleteCard(pair.lane, pair.col, c)" />
+                <TimeCard :card="element" :open-on-mount="element.__new === true"
+                          :running-id="runningId" :now-tick="nowTick"
+                          @start="startTimer" @stop="stopTimer"
+                          @save="saveCard" @delete="c => deleteCard(pair.lane, pair.col, c)" />
               </template>
             </draggable>
           </div>
@@ -476,7 +559,7 @@ watch([currentWeekStart, groupBy], () => { load() })
               </div>
               <div class="lanehead__right">
                 <small>{{ laneHours(lane).toFixed(1) }} h</small>
-                <button class="mini" @click="editLaneMeta(lane)" title="Edit project settings">⋯</button>
+                <button class="mini icon" @click="editLaneMeta(lane)" title="Edit project settings">⋯</button>
               </div>
             </div>
             <div v-if="getLaneMeta(lane.key).description" class="lanehead__desc">
@@ -489,7 +572,7 @@ watch([currentWeekStart, groupBy], () => { load() })
             <div class="cell">
               <div class="cell__sum" v-if="cellHours(lane, col.dayKey)">{{ cellHours(lane, col.dayKey).toFixed(1) }} h</div>
               <div class="cell__actions">
-                <button class="mini" @click="addCard(lane, col)" title="Add card to this cell">＋</button>
+                <button class="mini icon" @click="addCard(lane, col)" title="Add card to this cell">＋</button>
               </div>
               <div v-if="!col.cards.length" class="cell__empty">No entries</div>
               <draggable
@@ -507,6 +590,8 @@ watch([currentWeekStart, groupBy], () => { load() })
               >
                 <template #item="{ element }">
                   <TimeCard :card="element" :open-on-mount="element.__new === true"
+                            :running-id="runningId" :now-tick="nowTick"
+                            @start="startTimer" @stop="stopTimer"
                             @save="saveCard" @delete="c => deleteCard(lane, col, c)" />
                 </template>
               </draggable>
@@ -583,12 +668,21 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 }
 .cell--head { background: transparent; border: none; min-height: auto; }
 .cell--rowhead { position: sticky; left: 0; z-index: 5; background: var(--panel); border-right: 1px solid var(--border); }
-.cell__empty{ position:absolute; inset:0; display:grid; place-items:center; color:var(--muted); font-size:.9rem; pointer-events:none; }
+.cell__empty { pointer-events: none; }
 .dayhead { display: flex; align-items: baseline; justify-content: space-between; padding: 8px 6px; border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 700; font-size: .95rem; }
 .lanehead { display: flex; align-items: baseline; justify-content: space-between; padding: 10px 8px; font-weight: 700; font-size: .95rem; }
 .lanehead__title { display: flex; align-items: center; gap: 6px; }
 .lanehead__right { display: flex; align-items: center; gap: 6px; }
 .lanehead__desc { color: var(--muted); font-size: .85rem; padding: 0 8px 8px; }
+/* Prevent rowhead contents from bleeding into the first day column */
+.cell--rowhead { overflow: hidden; }                /* clip to the rowhead cell */
+.lanehead { gap: 8px; }                             /* breathing room */
+.lanehead__title { min-width: 0; }                  /* allow flex child to shrink */
+.lanehead__title strong {
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.lanehead__desc { overflow-wrap: anywhere; word-break: break-word; }  /* safe wrapping */
+.lanehead__right { flex-shrink: 0; }                /* keep the … button inside the cell */
 
 .badge { font-size: .72rem; padding: .1rem .45rem; border-radius: 999px; border: 1px solid var(--border); }
 .badge.p-low { background: #eef6ff; color: #1e3a8a; }
