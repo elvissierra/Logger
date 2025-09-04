@@ -9,7 +9,7 @@ const emit = defineEmits(['save', 'delete'])
 
 const editing = ref(false)
 const local = ref(structuredClone(props.card))
-
+if (!('priority' in local.value)) local.value.priority = 'Normal'
 watch(() => props.card, (v) => { local.value = structuredClone(v) }, { deep: true })
 
 // When entering edit mode, seed datetime-local fields from the card
@@ -36,6 +36,7 @@ onMounted(() => {
     local.value.start_local = local.value.start_local || toLocalInput(local.value.start_utc)
     local.value.end_local   = local.value.end_local   || toLocalInput(local.value.end_utc)
   }
+  if (!local.value.priority) local.value.priority = 'Normal'
 })
 
 // ISO -> datetime-local (input value)
@@ -65,6 +66,7 @@ function onSave() {
     // map UI -> API fields
     project_code: local.value.projectCode,
     activity: local.value.activity,
+    priority: local.value.priority || 'Normal',
     notes: [local.value.description, local.value.notes].filter(Boolean).join('\n'),
     start_utc: fromLocalInput(local.value.start_local || toLocalInput(local.value.start_utc)),
     end_utc: fromLocalInput(local.value.end_local || toLocalInput(local.value.end_utc)),
@@ -80,6 +82,7 @@ function onDelete() { emit('delete', props.card) }
     <header class="tcard__head">
       <span class="handle" title="Drag to reorder" aria-label="Drag handle">☰</span>
       <div class="tcard__title">
+        <span class="prio" :class="('p-' + (card.priority || 'Normal').toLowerCase())">{{ card.priority || 'Normal' }}</span>
         <strong class="title">{{ card.jobTitle || card.projectCode || 'Untitled' }}</strong>
         <span class="chip" v-if="card.activity">{{ card.activity }}</span>
       </div>
@@ -110,6 +113,11 @@ function onDelete() { emit('delete', props.card) }
         </label>
         <label>Activity
           <input v-model="local.activity" placeholder="Paperwork / Field Work / Travel" />
+        </label>
+        <label>Urgency
+          <select v-model="local.priority">
+            <option v-for="p in ['Low','Normal','High','Critical']" :key="p" :value="p">{{ p }}</option>
+          </select>
         </label>
         <label>Description
           <textarea v-model="local.description" rows="2" placeholder="What you worked on"></textarea>
@@ -153,6 +161,11 @@ function onDelete() { emit('delete', props.card) }
 .tcard__title { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
 .title { font-weight: 700; letter-spacing: .2px; }
 .chip { font-size: .75rem; padding: .15rem .45rem; border-radius: 999px; background: color-mix(in srgb, var(--primary, #5b8cff) 18%, transparent); color: var(--text, #111827); border: 1px solid var(--border, #e5e7eb); }
+.prio { font-size: .75rem; padding: .15rem .45rem; border-radius: 999px; border: 1px solid var(--border, #e5e7eb); }
+.prio.p-low { background: #eef6ff; color: #1e3a8a; }
+.prio.p-normal { background: #eef2ff; color: #3730a3; }
+.prio.p-high { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
+.prio.p-critical { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
 .icon { border: 1px solid var(--border, #e5e7eb); border-radius: 8px; background: var(--panel-2, #f3f4f6); cursor: pointer; padding: .25rem .4rem; }
 .icon:hover { background: #e9eef7; }
 

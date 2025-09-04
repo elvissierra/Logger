@@ -204,26 +204,30 @@ async function saveCard(payload) {
 
   if (payload.id) {
     const res = await fetch(`${API_BASE}/api/time-entries/${payload.id}`, {
-    body: JSON.stringify({
-      project_code: payload.project_code || payload.projectCode,
-      activity: payload.activity,
-      start_utc: payload.start_utc,
-      end_utc: payload.end_utc,
-      notes: `[prio:${(payload.priority || 'Normal').toLowerCase()}]` + (payload.notes ? ` ${payload.notes}` : '')
-    })
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        project_code: payload.project_code || payload.projectCode,
+        activity: payload.activity,
+        start_utc: payload.start_utc,
+        end_utc: payload.end_utc,
+        notes: `[prio:${(payload.priority || 'Normal').toLowerCase()}]` + (payload.notes ? ` ${payload.notes}` : '')
+      })
     })
     if (!res.ok) return alert(`Failed to update: ${await res.text()}`)
   } else {
-    const res = await fetch(`${API_BASE}/api/time-entries/`, {
-    body: JSON.stringify({
-      user_id: userId,
-      project_code: payload.project_code || payload.projectCode,
-      activity: payload.activity,
-      start_utc: payload.start_utc,
-      end_utc: payload.end_utc,
-      notes: `[prio:${(payload.priority || 'Normal').toLowerCase()}]` + (payload.notes ? ` ${payload.notes}` : '')
-    })
-    })
+   const res = await fetch(`${API_BASE}/api/time-entries/`, {
+     method: 'POST',
+     headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify({
+       user_id: userId,
+       project_code: payload.project_code || payload.projectCode,
+       activity: payload.activity,
+       start_utc: payload.start_utc,
+       end_utc: payload.end_utc,
+       notes: `[prio:${(payload.priority || 'Normal').toLowerCase()}]` + (payload.notes ? ` ${payload.notes}` : '')
+     })
+   })
     if (!res.ok) return alert(`Failed to create: ${await res.text()}`)
   }
   await load()
@@ -374,8 +378,21 @@ watch([currentWeekStart, groupBy], () => { load() })
             class="focus__lane"
           >
             <div class="focus__lanehead">
-              <strong>{{ pair.lane.title }}</strong>
-              <button class="mini" @click="addCard(pair.lane, pair.col)" title="Add card">＋</button>
+              <div class="lane-title">
+                <strong>{{ pair.lane.title }}</strong>
+                <span v-if="getLaneMeta(pair.lane.key).priority"
+                      class="badge"
+                      :class="'p-' + (getLaneMeta(pair.lane.key).priority || 'Normal').toLowerCase()">
+                  {{ getLaneMeta(pair.lane.key).priority }}
+                </span>
+              </div>
+              <div class="lane-actions">
+                <button class="mini" @click="editLaneMeta(pair.lane)" title="Edit project settings">⋯</button>
+                <button class="mini" @click="addCard(pair.lane, pair.col)" title="Add card">＋</button>
+              </div>
+            </div>
+            <div v-if="getLaneMeta(pair.lane.key).description" class="focus__lanedesc">
+              {{ getLaneMeta(pair.lane.key).description }}
             </div>
             <draggable
               v-model="pair.col.cards"
@@ -441,6 +458,7 @@ watch([currentWeekStart, groupBy], () => { load() })
           <template v-for="col in lane.columns" :key="lane.key + ':' + col.dayKey">
             <div class="cell">
               <div class="cell__sum" v-if="cellHours(lane, col.dayKey)">{{ cellHours(lane, col.dayKey).toFixed(1) }} h</div>
+              <div class="cell__actions">
                 <button class="mini" @click="addCard(lane, col)" title="Add card to this cell">＋</button>
               </div>
               <draggable
@@ -457,7 +475,8 @@ watch([currentWeekStart, groupBy], () => { load() })
                 @end="onReorderCell(lane, col.dayKey)"
               >
                 <template #item="{ element }">
-                  <TimeCard :card="element" :open-on-mount="element.__new === true" @save="saveCard" @delete="c => deleteCard(lane, col, c)" />
+                  <TimeCard :card="element" :open-on-mount="element.__new === true"
+                            @save="saveCard" @delete="c => deleteCard(lane, col, c)" />
                 </template>
               </draggable>
             </div>
@@ -525,7 +544,21 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 
 .dayhead { display: flex; align-items: baseline; justify-content: space-between; padding: 8px 6px; border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 700; font-size: .95rem; }
 .lanehead { display: flex; align-items: baseline; justify-content: space-between; padding: 10px 8px; position: sticky; left: 0; font-weight: 700; font-size: .95rem; }
+.lanehead__title { display: flex; align-items: center; gap: 6px; }
+.lanehead__right { display: flex; align-items: center; gap: 6px; }
+.lanehead__desc { color: var(--muted); font-size: .85rem; padding: 0 8px 8px; }
 
+.badge { font-size: .72rem; padding: .1rem .45rem; border-radius: 999px; border: 1px solid var(--border); }
+.badge.p-low { background: #eef6ff; color: #1e3a8a; }
+.badge.p-normal { background: #eef2ff; color: #3730a3; }
+.badge.p-high { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
+.badge.p-critical { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
+
+.cell__sum { position: absolute; top: 6px; left: 6px; font-size: .78rem;
+             padding: .1rem .35rem; background: #edf2ff; border: 1px solid var(--border);
+             border-radius: 8px; color: #1e3a8a; }
+
+.focus__lanedesc { color: var(--muted); font-size: .85rem; padding: 6px 10px 0; }
 .cell__actions { position: absolute; top: 6px; right: 6px; }
 .cell__actions .mini { font-size: 16px; padding: 0 .35rem; line-height: 1.1; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--border); cursor: pointer; color: var(--text); }
 .cell__actions .mini:hover { background: #394860; }
