@@ -7,6 +7,31 @@ const API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000'
 const userId = 'user-123' // TODO: wire real auth later
 const TARGET_WEEKLY_HOURS = 40
 
+const PRIORITIES = ['Low','Normal','High','Critical']
+function parsePriorityAndCleanNotes(notes) {
+  if (!notes) return { priority: 'Normal', notes: '' }
+  const m = notes.match(/^\s*\[prio:(low|normal|high|critical)\]\s*/i)
+  if (m) {
+    const p = m[1].toLowerCase()
+    const pretty = p.charAt(0).toUpperCase() + p.slice(1)
+    return { priority: pretty, notes: notes.replace(m[0], '') }
+  }
+  return { priority: 'Normal', notes }
+}
+function laneMetaStorageKey(laneKey) { return `logger.laneMeta:${groupBy.value}:${laneKey}` }
+function getLaneMeta(laneKey) {
+  try { return JSON.parse(localStorage.getItem(laneMetaStorageKey(laneKey)) || '{}') } catch { return {} }
+}
+function setLaneMeta(laneKey, meta) { localStorage.setItem(laneMetaStorageKey(laneKey), JSON.stringify(meta || {})) }
+function editLaneMeta(lane) {
+  const current = getLaneMeta(lane.key)
+  const desc = window.prompt('Project description:', current.description || '') ?? (current.description || '')
+  const pri  = window.prompt('Priority (Low, Normal, High, Critical):', current.priority || 'Normal') ?? (current.priority || 'Normal')
+  const normPri = (pri || 'Normal').trim()
+  const valid = PRIORITIES.includes(normPri) ? normPri : 'Normal'
+  setLaneMeta(lane.key, { description: desc, priority: valid })
+}
+
 // ---- Date helpers (local time) ----
 function pad(n) { return String(n).padStart(2, '0') }
 function startOfWeek(d = new Date()) {
@@ -65,13 +90,15 @@ const loading = ref(false)
 const error = ref('')
 
 function mapEntryToCard(e) {
+  const parsed = parsePriorityAndCleanNotes(e.notes || '')
   return {
     id: e.id,
-    jobTitle: e.project_code,     // provisional display
+    jobTitle: e.project_code,
     projectCode: e.project_code,
     activity: e.activity,
     description: '',
-    notes: e.notes || '',
+    notes: parsed.notes,
+    priority: parsed.priority,
     start_utc: e.start_utc,
     end_utc: e.end_utc,
     seconds: e.seconds || 0
@@ -177,25 +204,25 @@ async function saveCard(payload) {
 
   if (payload.id) {
     const res = await fetch(`${API_BASE}/api/time-entries/${payload.id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-        project_code: payload.project_code || payload.projectCode,
-        activity: payload.activity,
-        start_utc: payload.start_utc,
-        end_utc: payload.end_utc,
-        notes: payload.notes
-      })
+    body: JSON.stringify({
+      project_code: payload.project_code || payload.projectCode,
+      activity: payload.activity,
+      start_utc: payload.start_utc,
+      end_utc: payload.end_utc,
+      notes: `[prio:${(payload.priority || 'Normal').toLowerCase()}]` + (payload.notes ? ` ${payload.notes}` : '')
+    })
     })
     if (!res.ok) return alert(`Failed to update: ${await res.text()}`)
   } else {
     const res = await fetch(`${API_BASE}/api/time-entries/`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-        user_id: userId,
-        project_code: payload.project_code || payload.projectCode,
-        activity: payload.activity,
-        start_utc: payload.start_utc,
-        end_utc: payload.end_utc,
-        notes: payload.notes
-      })
+    body: JSON.stringify({
+      user_id: userId,
+      project_code: payload.project_code || payload.projectCode,
+      activity: payload.activity,
+      start_utc: payload.start_utc,
+      end_utc: payload.end_utc,
+      notes: `[prio:${(payload.priority || 'Normal').toLowerCase()}]` + (payload.notes ? ` ${payload.notes}` : '')
+    })
     })
     if (!res.ok) return alert(`Failed to create: ${await res.text()}`)
   }
@@ -262,6 +289,11 @@ function colHours(dayKey) {
 }
 function laneHours(lane) {
   return lane.columns.reduce((tot, c) => tot + c.cards.reduce((s, x) => s + hoursBetween(x.start_utc, x.end_utc), 0), 0)
+}
+function cellHours(lane, dayKey) {
+  const col = lane.columns.find(c => c.dayKey === dayKey)
+  if (!col) return 0
+  return col.cards.reduce((s, c) => s + hoursBetween(c.start_utc, c.end_utc), 0)
 }
 const weeklyHours = computed(() => headerDays.value.reduce((tot, d) => tot + colHours(d.key), 0))
 const weeklyPct = computed(() => Math.min(1, (TARGET_WEEKLY_HOURS ? (weeklyHours.value / TARGET_WEEKLY_HOURS) : 0)))
@@ -359,7 +391,7 @@ watch([currentWeekStart, groupBy], () => { load() })
               @end="onReorderCell(pair.lane, pair.col.dayKey)"
             >
               <template #item="{ element }">
-                <TimeCard :card="element" @save="saveCard" @delete="c => deleteCard(pair.lane, pair.col, c)" />
+                <TimeCard :card="element" :open-on-mount="element.__new === true" @save="saveCard" @delete="c => deleteCard(pair.lane, pair.col, c)" />
               </template>
             </draggable>
           </div>
@@ -387,15 +419,28 @@ watch([currentWeekStart, groupBy], () => { load() })
           <!-- Row header cell -->
           <div class="cell cell--rowhead">
             <div class="lanehead">
-              <strong>{{ lane.title }}</strong>
-              <small>{{ laneHours(lane).toFixed(1) }} h</small>
+              <div class="lanehead__title">
+                <strong>{{ lane.title }}</strong>
+                <span v-if="getLaneMeta(lane.key).priority"
+                      class="badge"
+                      :class="'p-' + (getLaneMeta(lane.key).priority || 'Normal').toLowerCase()">
+                  {{ getLaneMeta(lane.key).priority }}
+                </span>
+              </div>
+              <div class="lanehead__right">
+                <small>{{ laneHours(lane).toFixed(1) }} h</small>
+                <button class="mini" @click="editLaneMeta(lane)" title="Edit project settings">⋯</button>
+              </div>
+            </div>
+            <div v-if="getLaneMeta(lane.key).description" class="lanehead__desc">
+              {{ getLaneMeta(lane.key).description }}
             </div>
           </div>
 
           <!-- Day cells -->
           <template v-for="col in lane.columns" :key="lane.key + ':' + col.dayKey">
             <div class="cell">
-              <div class="cell__actions">
+              <div class="cell__sum" v-if="cellHours(lane, col.dayKey)">{{ cellHours(lane, col.dayKey).toFixed(1) }} h</div>
                 <button class="mini" @click="addCard(lane, col)" title="Add card to this cell">＋</button>
               </div>
               <draggable
@@ -412,7 +457,7 @@ watch([currentWeekStart, groupBy], () => { load() })
                 @end="onReorderCell(lane, col.dayKey)"
               >
                 <template #item="{ element }">
-                  <TimeCard :card="element" @save="saveCard" @delete="c => deleteCard(lane, col, c)" />
+                  <TimeCard :card="element" :open-on-mount="element.__new === true" @save="saveCard" @delete="c => deleteCard(lane, col, c)" />
                 </template>
               </draggable>
             </div>
@@ -432,10 +477,25 @@ watch([currentWeekStart, groupBy], () => { load() })
 }
 .nav { display: flex; align-items: center; gap: 6px; }
 .nav button {
-  padding: .36rem .55rem; color:rgb(25, 40, 209); border: 1px solid var(--border); background: var(--panel); border-radius: 10px; cursor: pointer;
+  padding: .36rem .55rem;
+  color: rgb(25, 40, 209);
+  border: 1px solid var(--border);
+  background: var(--btn-blue-bg);      /* was var(--panel) */
+  border-radius: 10px;
+  cursor: pointer;
 }
+.nav button:hover { background: var(--btn-blue-bg-hover); }
 .range { margin-left: .4rem; font-weight: 700; color: var(--text); }
 .toolbar { display: flex; align-items: center; gap: 12px; }
+.toolbar button {
+  padding: .36rem .55rem;
+  color: rgb(25, 40, 209);
+  border: 1px solid var(--border);
+  background: var(--btn-blue-bg);      /* was var(--panel) */
+  border-radius: 10px;
+  cursor: pointer;
+}
+.toolbar button:hover { background: var(--btn-blue-bg-hover); }
 .group { display: flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 600; }
 select { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: .3rem .45rem; }
 .goal { display: flex; align-items: center; gap: 8px; }
@@ -495,20 +555,4 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 .focus__lanehead { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--border); font-weight: 700; }
 .focus__droplist { display: grid; gap: 10px; padding: 10px; max-height: none; }
 .focus :deep(.tcard) { box-shadow: var(--shadow-md); }
-
-/* --- Focus (enlarged current-day column) --- */
-.focus { max-width: var(--container); margin: 0 auto 16px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
-.focus__header { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 14px; border-bottom: 1px solid var(--border); }
-.focus__hours { color: var(--muted); font-weight: 700; }
-.focus__layout { display: grid; grid-template-columns: 280px 1fr; gap: 12px; padding: 12px; }
-@media (max-width: 900px) { .focus__layout { grid-template-columns: 1fr; } }
-.focus__plan { display: grid; gap: 6px; }
-.focus__label { font-weight: 700; color: var(--muted); }
-.focus__textarea { width: 100%; min-height: 140px; resize: vertical; padding: .6rem .7rem; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); color: var(--text); }
-.focus__hint { color: var(--muted); }
-.focus__col { display: grid; gap: 12px; }
-.focus__lane { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
-.focus__lanehead { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--border); font-weight: 700; }
-.focus__droplist { display: grid; gap: 10px; padding: 10px; max-height: none; }
-.focus :deep(.tcard) { transform: scale(1.02); box-shadow: var(--shadow-md); }
 </style>

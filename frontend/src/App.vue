@@ -22,6 +22,8 @@ import TimeBoard from './components/TimeBoard.vue'
   --shadow-sm: 0 1px 2px rgba(16,24,40,.06);
   --shadow-md: 0 8px 24px rgba(16,24,40,.08);
   --container: 1280px; /* app max width */
+  --btn-blue-bg: #eaf2ff;
+  --btn-blue-bg-hover: #dbe7ff;
 }
 :global(html, body, #app) { height: 100%; }
 :global(body) {

@@ -1,4 +1,3 @@
-
 <script setup>
 import { ref, watch, computed, onMounted } from 'vue'
 
@@ -10,7 +9,9 @@ const emit = defineEmits(['save', 'delete'])
 
 const editing = ref(false)
 const local = ref(structuredClone(props.card))
+
 watch(() => props.card, (v) => { local.value = structuredClone(v) }, { deep: true })
+
 // When entering edit mode, seed datetime-local fields from the card
 watch(editing, (on) => {
   if (on) {
@@ -18,6 +19,7 @@ watch(editing, (on) => {
     local.value.end_local = toLocalInput(props.card.end_utc)
   }
 })
+
 // Keep local datetime fields in sync if the card changes while not editing
 watch(() => props.card, (v) => {
   if (!editing.value) {
@@ -25,7 +27,8 @@ watch(() => props.card, (v) => {
     local.value.end_local = toLocalInput(v.end_utc)
   }
 }, { deep: true })
-// Auto-open editor for brand-new cards or when parent requests it
+
+// Auto-open editor for new cards / when requested
 onMounted(() => {
   const tmp = props.card && String(props.card.id || '').startsWith('tmp_')
   if (props.openOnMount || tmp) {
@@ -34,6 +37,7 @@ onMounted(() => {
     local.value.end_local   = local.value.end_local   || toLocalInput(local.value.end_utc)
   }
 })
+
 // ISO -> datetime-local (input value)
 function toLocalInput(iso) {
   if (!iso) return ''
