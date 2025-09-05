@@ -1,13 +1,19 @@
 <script setup>
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 
-const clone = (obj) => (typeof structuredClone === 'function' ? structuredClone(obj) : JSON.parse(JSON.stringify(obj)))
+const clone = (obj) => {
+  try {
+    if (typeof structuredClone === 'function') return structuredClone(obj)
+  } catch (_) { /* fall through */ }
+  try { return JSON.parse(JSON.stringify(obj)) } catch { return obj ? { ...obj } : obj }
+}
 
 const props = defineProps({
   card: { type: Object, required: true },
   openOnMount: { type: Boolean, default: false },
   runningId: { type: String, default: null },
-  nowTick: { type: Number, default: 0 }
+  nowTick: { type: Number, default: 0 },
+  compact: { type: Boolean, default: false }
 })
 const emit = defineEmits(['save', 'delete', 'start', 'stop'])
 const isRunning = computed(() => props.runningId && props.card.id === props.runningId)
@@ -99,8 +105,9 @@ function onStop(){ emit('stop', props.card) }
 </script>
 
 <template>
-  <article class="tcard" :class="{ editing }">
-    <header class="tcard__head">
+  <article class="tcard" :class="{ editing, compact }">
+    <!-- Full header (focus cards) -->
+    <header v-if="!compact" class="tcard__head">
       <span class="handle" title="Drag to reorder" aria-label="Drag handle">☰</span>
       <div class="tcard__title">
         <span class="prio-dot" :class="('p-' + (card.priority || 'Normal').toLowerCase())" :title="card.priority || 'Normal'"></span>
@@ -110,22 +117,37 @@ function onStop(){ emit('stop', props.card) }
       <div class="hours" v-if="durationHours > 0">{{ fmtH(durationHours, 1) }} h</div>
     </header>
 
-    <section v-if="!editing" class="tcard__body" @dblclick="editing = true">
-      <p class="desc" :class="{ clamped: !showFullDesc }" v-if="card.description">{{ card.description }}</p>
-      <button v-if="card.description && isClampedCandidate" class="link more" @click="showFullDesc = !showFullDesc">
-        {{ showFullDesc ? 'Show less' : 'Read more' }}
-      </button>
-      <p class="notes" v-if="card.notes"><em>{{ card.notes }}</em></p>
+    <!-- Compact header (weekly grid cards) -->
+    <header v-else class="tcard__head tcard__head--compact">
+      <div class="hours-lg">{{ fmtH(durationHours, 2) }} h</div>
+    </header>
 
-      <div class="meta" v-if="card.start_utc && card.end_utc">
-        <span class="time">
-          {{ new Date(card.start_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }} →
-          {{ new Date(card.end_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }}
-        </span>
-        <span class="sep">•</span>
-        <span class="hours">{{ fmtH(durationHours, 2) }} h</span>
-      </div>
-    </section>
+    <!-- Compact weekly card: only a Details dropdown -->
+<section v-if="compact" class="tcard__body tcard__body--compact">
+  <details v-if="card.description || card.notes" class="mini-details">
+    <summary>Details</summary>
+    <p v-if="card.description" class="desc">{{ card.description }}</p>
+    <p v-if="card.notes" class="notes"><em>{{ card.notes }}</em></p>
+  </details>
+</section>
+
+<!-- Full card (focus area) -->
+<section v-else-if="!editing" class="tcard__body" @dblclick="editing = true">
+  <p class="desc" :class="{ clamped: !showFullDesc }" v-if="card.description">{{ card.description }}</p>
+  <button v-if="card.description && isClampedCandidate" class="link more" @click="showFullDesc = !showFullDesc">
+    {{ showFullDesc ? 'Show less' : 'Read more' }}
+  </button>
+  <p class="notes" v-if="card.notes"><em>{{ card.notes }}</em></p>
+
+  <div class="meta" v-if="card.start_utc && card.end_utc">
+    <span class="time">
+      {{ new Date(card.start_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }} →
+      {{ new Date(card.end_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }}
+    </span>
+    <span class="sep">•</span>
+    <span class="hours">{{ fmtH(durationHours, 2) }} h</span>
+  </div>
+</section>
 
     <section v-else class="tcard__edit">
       <div class="grid">
@@ -165,7 +187,7 @@ function onStop(){ emit('stop', props.card) }
         <button type="button" class="danger" @click="onDelete">Delete</button>
       </div>
     </section>
-    <footer class="tcard__foot">
+    <footer v-if="!compact" class="tcard__foot">
       <div class="spacer"></div>
       <div class="actions__icons">
         <button class="icon" :title="isRunning ? 'Stop' : 'Start'" :aria-label="isRunning ? 'Stop' : 'Start'" @click="isRunning ? onStop() : onStart()">
@@ -179,7 +201,9 @@ function onStop(){ emit('stop', props.card) }
 
 <style scoped>
 .tcard {
-  display: grid; gap: .55rem;
+  display: grid;
+  grid-template-rows: auto 1fr auto; /* header | body grows | footer at bottom */
+  gap: .55rem;
   background: var(--card, #ffffff);
   border: 1px solid var(--border, #e5e7eb);
   border-radius: var(--radius, 12px);
@@ -187,6 +211,7 @@ function onStop(){ emit('stop', props.card) }
   box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,.06));
   transition: box-shadow .15s ease, transform .08s ease, border-color .2s ease, background .2s ease;
   overflow: hidden;
+  min-height: 132px; /* ensure room so footer doesn't crowd header */
 }
 .tcard:hover { box-shadow: var(--shadow-md, 0 6px 16px rgba(0,0,0,.08)); border-color: color-mix(in srgb, var(--border, #e5e7eb) 70%, var(--primary, #5b8cff) 30%); }
 .tcard.editing { background: var(--panel, #f6f7fb); }
@@ -212,17 +237,17 @@ function onStop(){ emit('stop', props.card) }
 .link.more { background: transparent; border: none; color: var(--primary, #5b8cff); padding: 0; cursor: pointer; }
 
 /* footer actions */
-.tcard__foot { display: flex; justify-content: flex-end; gap: .35rem; margin-top: .25rem; }
+.tcard__foot { display: flex; justify-content: flex-end; gap: .35rem; margin-top: 0; }
 .prio { font-size: .75rem; padding: .15rem .45rem; border-radius: 999px; border: 1px solid var(--border, #e5e7eb); }
 .prio.p-low { background: #eef6ff; color: #1e3a8a; }
 .prio.p-normal { background: #eef2ff; color: #3730a3; }
 .prio.p-high { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
 .prio.p-critical { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
-.icon { border: 1px solid var(--border, #e5e7eb); border-radius: 8px; background: var(--panel-2, #f3f4f6); cursor: pointer; padding: .25rem .4rem; }
+.icon { border: 1px solid var(--border, #e5e7eb); border-radius: 8px; background: var(--panel-2, #f3f4f6); cursor: pointer; padding: .25rem .45rem; line-height: 1; }
 .icon:hover { background: #e9eef7; }
 .hint{ align-self:center; color:var(--muted); font-size:.85rem; margin-left:.25rem; }
 
-.tcard__body { color: var(--text, #374151); }
+.tcard__body { color: var(--text, #374151); min-height: 52px; }
 .tcard__body p { margin: .25rem 0; word-break: break-word; }
 .desc { margin: .2rem 0; color: var(--text, #111827); }
 .notes { margin: .2rem 0; color: var(--muted, #6b7280); }
@@ -244,4 +269,20 @@ button:active { transform: translateY(1px); }
 button.primary { background: linear-gradient(180deg, var(--primary, #5b8cff), var(--primary-600, #3e6dff)); border-color: color-mix(in srgb, var(--border, #d1d5db) 40%, var(--primary, #5b8cff) 60%); color: #fff; }
 button.danger { border-color: #ef4444; color: #b91c1c; }
  .actions__icons { display: flex; gap: .35rem; }
+/* --- Compact variant for weekly grid --- */
+.tcard.compact { padding: .55rem .6rem; min-height: 88px; grid-template-rows: auto 1fr; }
+.tcard__head--compact { display:flex; align-items:center; justify-content:flex-start; }
+.hours-lg { font-weight: 800; font-size: 1.05rem; }
+.tcard.compact .handle,
+.tcard.compact .tcard__title,
+.tcard.compact .meta { display: none; }
+.tcard.compact .tcard__foot { display: none; }
+
+.mini-details { border-top: 1px dashed var(--border); padding-top: .35rem; }
+.mini-details summary { cursor: pointer; color: var(--primary); list-style: none; }
+.mini-details summary::-webkit-details-marker { display: none; }
+
+/* legacy: hide any old text priority pill if present */
+.tcard .prio { display: none !important; }
+
 </style>
