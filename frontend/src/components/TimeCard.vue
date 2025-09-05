@@ -1,6 +1,8 @@
 <script setup>
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 
+const clone = (obj) => (typeof structuredClone === 'function' ? structuredClone(obj) : JSON.parse(JSON.stringify(obj)))
+
 const props = defineProps({
   card: { type: Object, required: true },
   openOnMount: { type: Boolean, default: false },
@@ -9,11 +11,13 @@ const props = defineProps({
 })
 const emit = defineEmits(['save', 'delete', 'start', 'stop'])
 const isRunning = computed(() => props.runningId && props.card.id === props.runningId)
+const showFullDesc = ref(false)
+const isClampedCandidate = computed(() => (props.card.description || '').length > 120)
 
 const editing = ref(false)
-const local = ref(structuredClone(props.card))
+const local = ref(clone(props.card))
 if (!('priority' in local.value)) local.value.priority = 'Normal'
-watch(() => props.card, (v) => { local.value = structuredClone(v) }, { deep: true })
+watch(() => props.card, (v) => { local.value = clone(v) }, { deep: true })
 
 // When entering edit mode, seed datetime-local fields from the card
 watch(editing, (on) => {
@@ -46,6 +50,11 @@ function onKey(e){
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase()==='s'){ e.preventDefault(); onSave() }
   else if (e.key==='Escape'){ e.preventDefault(); editing.value=false }
 }
+function fmtH(n, d = 1) {
+  const x = Number(n)
+  return Number.isFinite(x) ? x.toFixed(d) : (0).toFixed(d)
+}
+
 onMounted(()=>window.addEventListener('keydown', onKey))
 onUnmounted(()=>window.removeEventListener('keydown', onKey))
 
@@ -94,18 +103,18 @@ function onStop(){ emit('stop', props.card) }
     <header class="tcard__head">
       <span class="handle" title="Drag to reorder" aria-label="Drag handle">☰</span>
       <div class="tcard__title">
-        <span class="prio" :class="('p-' + (card.priority || 'Normal').toLowerCase())">{{ card.priority || 'Normal' }}</span>
+        <span class="prio-dot" :class="('p-' + (card.priority || 'Normal').toLowerCase())" :title="card.priority || 'Normal'"></span>
         <strong class="title">{{ card.jobTitle || card.projectCode || 'Untitled' }}</strong>
         <span class="chip" v-if="card.activity">{{ card.activity }}</span>
       </div>
-      <div class="actions__icons">
-        <button class="icon" :title="isRunning ? 'Stop' : 'Start'" :aria-label="isRunning ? 'Stop' : 'Start'" @click="isRunning ? onStop() : onStart()">{{ isRunning ? '■' : '▶︎' }}</button>
-        <button class="icon" title="Edit" aria-label="Edit" @click="editing = !editing">✎</button>
-      </div>
+      <div class="hours" v-if="durationHours > 0">{{ fmtH(durationHours, 1) }} h</div>
     </header>
 
     <section v-if="!editing" class="tcard__body" @dblclick="editing = true">
-      <p class="desc" v-if="card.description">{{ card.description }}</p>
+      <p class="desc" :class="{ clamped: !showFullDesc }" v-if="card.description">{{ card.description }}</p>
+      <button v-if="card.description && isClampedCandidate" class="link more" @click="showFullDesc = !showFullDesc">
+        {{ showFullDesc ? 'Show less' : 'Read more' }}
+      </button>
       <p class="notes" v-if="card.notes"><em>{{ card.notes }}</em></p>
 
       <div class="meta" v-if="card.start_utc && card.end_utc">
@@ -114,7 +123,7 @@ function onStop(){ emit('stop', props.card) }
           {{ new Date(card.end_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }}
         </span>
         <span class="sep">•</span>
-        <span class="hours">{{ durationHours.toFixed(2) }} h</span>
+        <span class="hours">{{ fmtH(durationHours, 2) }} h</span>
       </div>
     </section>
 
@@ -156,6 +165,15 @@ function onStop(){ emit('stop', props.card) }
         <button type="button" class="danger" @click="onDelete">Delete</button>
       </div>
     </section>
+    <footer class="tcard__foot">
+      <div class="spacer"></div>
+      <div class="actions__icons">
+        <button class="icon" :title="isRunning ? 'Stop' : 'Start'" :aria-label="isRunning ? 'Stop' : 'Start'" @click="isRunning ? onStop() : onStart()">
+          {{ isRunning ? '■' : '▶︎' }}
+        </button>
+        <button class="icon" title="Edit" aria-label="Edit" @click="editing = !editing">✎</button>
+      </div>
+    </footer>
   </article>
 </template>
 
@@ -178,6 +196,23 @@ function onStop(){ emit('stop', props.card) }
 .tcard__title { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
 .title { font-weight: 700; letter-spacing: .2px; }
 .chip { font-size: .75rem; padding: .15rem .45rem; border-radius: 999px; background: color-mix(in srgb, var(--primary, #5b8cff) 18%, transparent); color: var(--text, #111827); border: 1px solid var(--border, #e5e7eb); }
+.tcard__title { gap: .45rem; }
+.tcard__title .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hours { font-weight: 600; opacity: .9; }
+
+/* color-only priority dot */
+.prio-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; border: 1px solid var(--border, #e5e7eb); }
+.prio-dot.p-low { background: #93c5fd; border-color: #93c5fd; }
+.prio-dot.p-normal { background: #a5b4fc; border-color: #a5b4fc; }
+.prio-dot.p-high { background: #fdba74; border-color: #fdba74; }
+.prio-dot.p-critical { background: #fca5a5; border-color: #fca5a5; }
+
+/* description clamp */
+.desc.clamped { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.link.more { background: transparent; border: none; color: var(--primary, #5b8cff); padding: 0; cursor: pointer; }
+
+/* footer actions */
+.tcard__foot { display: flex; justify-content: flex-end; gap: .35rem; margin-top: .25rem; }
 .prio { font-size: .75rem; padding: .15rem .45rem; border-radius: 999px; border: 1px solid var(--border, #e5e7eb); }
 .prio.p-low { background: #eef6ff; color: #1e3a8a; }
 .prio.p-normal { background: #eef2ff; color: #3730a3; }

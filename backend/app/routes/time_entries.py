@@ -100,7 +100,7 @@ def create_entry(db: Session, payload: TimeEntryCreate) -> TimeEntry:
     return obj
 
 def get_entry(db: Session, entry_id: str) -> Optional[TimeEntry]:
-    return db.query(TimeEntry).get(entry_id)
+    return db.get(TimeEntry, entry_id)
 
 def update_entry(db: Session, entry: TimeEntry, payload: TimeEntryUpdate) -> TimeEntry:
     # apply updates

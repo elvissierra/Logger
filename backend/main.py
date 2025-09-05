@@ -8,7 +8,7 @@ from app.core.database import Base, engine
 APP_NAME = os.getenv("APP_NAME", "Logger API")
 
 # CORS origins: comma-separated env var or default to Vite dev server
-_origins_env = os.getenv("BACKEND_CORS_ORIGINS", "http://localhost:5173")
+_origins_env = os.getenv("BACKEND_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
 BACKEND_CORS_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()]
 
 app = FastAPI(title=APP_NAME)
