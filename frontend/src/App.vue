@@ -1,9 +1,26 @@
 <script setup>
+import { ref, onErrorCaptured, computed } from 'vue'
 import TimeBoard from './components/TimeBoard.vue'
+// Optional debug/simple view: visit http://localhost:5173/?sheet=1
+// to render the lightweight TimeSheet page instead of the board
+import TimeSheet from '../TimeSheet.vue'
+
+const err = ref(null)
+onErrorCaptured((e) => { err.value = e; console.error(e); return false })
+
+const showSheet = computed(() => new URLSearchParams(location.search).get('sheet') === '1')
 </script>
 
 <template>
-  <TimeBoard />
+  <div>
+    <div v-if="err" class="fatal">
+      <h1>UI error</h1>
+      <pre class="pre">{{ String(err && (err.message || err)) }}</pre>
+      <p>Check the browser console for stack traces.</p>
+    </div>
+    <TimeSheet v-else-if="showSheet" />
+    <TimeBoard v-else />
+  </div>
 </template>
 
 <style scoped>
@@ -32,12 +49,13 @@ import TimeBoard from './components/TimeBoard.vue'
   font: 500 15px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
 }
 :global(#app) { min-height: 100dvh; }
-@media (prefers-color-scheme: dark) {
-  :global(:root) {
-    --bg:#0b1220; --panel:#0f172a; --panel-2:#111827;
-    --text:#e5e7eb; --muted:#94a3b8; --border:#243b5a;
-    --primary:#60a5fa; --primary-600:#3b82f6; --accent:#22d3ee;
-    --btn-blue-bg:#13223f; --btn-blue-bg-hover:#0f1b33;
-  }
+:global(:root[data-theme="dark"]) {
+  --bg:#0b1220; --panel:#0f172a; --panel-2:#111827;
+  --text:#e5e7eb; --muted:#94a3b8; --border:#243b5a;
+  --primary:#60a5fa; --primary-600:#3b82f6; --accent:#22d3ee;
+  --btn-blue-bg:#13223f; --btn-blue-bg-hover:#0f1b33;
 }
+
+.fatal { padding:16px; color:#991b1b; background:#fee2e2; border:1px solid #fecaca; border-radius: 10px; margin:16px; }
+.pre { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
 </style>

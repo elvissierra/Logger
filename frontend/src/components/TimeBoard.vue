@@ -5,12 +5,24 @@ import TimeCard from './TimeCard.vue'
 import { onUnmounted } from 'vue'
 
 // --- Global ticking for live timers ---
+// --- Theme (light/dark) toggle ---
+const theme = ref(localStorage.getItem('logger.theme') || 'light')
+watch(theme, (t) => {
+  document.documentElement.setAttribute('data-theme', t)
+  localStorage.setItem('logger.theme', t)
+}, { immediate: true })
+function toggleTheme(){ theme.value = theme.value === 'dark' ? 'light' : 'dark' }
 const nowTick = ref(Date.now())
 let _nowHandle = null
 onMounted(() => {
   _nowHandle = setInterval(() => (nowTick.value = Date.now()), 1000)
 })
 onUnmounted(() => { if (_nowHandle) clearInterval(_nowHandle) })
+
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000'
+const userId = localStorage.getItem('logger.userId') || 'user-123' // TODO: wire real auth later
+function setUserId(id){ localStorage.setItem('logger.userId', id) }
+const TARGET_WEEKLY_HOURS = 40
 
 // --- Running timer pointer (client-side) ---
 function runningKey () { return `logger.runningEntry:${userId}` }
@@ -76,15 +88,34 @@ async function stopTimer () {
   const id = await stopRunningIfAny()
   if (id) notify('Timer stopped', 'success')
 }
+function isLaneRunning(lane) {
+  try {
+    if (!runningId.value) return false
+    for (const col of lane.columns) {
+      if (col.cards && col.cards.some(x => x.id === runningId.value)) return true
+    }
+    return false
+  } catch { return false }
+}
+
+async function startLaneTimer(lane) {
+  const meta = getLaneMeta(lane.key) || {}
+  const seed = {
+    project_code: groupBy.value === 'project_code' ? lane.title : '',
+    projectCode:  groupBy.value === 'project_code' ? lane.title : '',
+    activity:     groupBy.value === 'activity'     ? lane.title : '',
+    priority: meta.priority || 'Normal',
+    notes: meta.description || ''
+  }
+  await startTimer(seed)
+}
 
 onMounted(() => { load(); window.addEventListener('keydown', onKey) })
 onUnmounted(() => window.removeEventListener('keydown', onKey))
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000'
-const userId = 'user-123' // TODO: wire real auth later
-const TARGET_WEEKLY_HOURS = 40
 
 const PRIORITIES = ['Low','Normal','High','Critical']
+
 function parsePriorityAndCleanNotes(notes) {
   if (!notes) return { priority: 'Normal', notes: '' }
   const m = notes.match(/^\s*\[prio:(low|normal|high|critical)\]\s*/i)
@@ -133,6 +164,11 @@ function hoursBetween(isoA, isoB) {
   const b = new Date(isoB).getTime()
   return Math.max(0, (b - a) / 3600000)
 }
+// Safe hours formatter to avoid undefined.toFixed crashes
+function fmtH(n, d = 1) {
+  const x = Number(n)
+  return Number.isFinite(x) ? x.toFixed(d) : (0).toFixed(d)
+}
 
 // ---- Week navigation ----
 const currentWeekStart = ref(startOfWeek(new Date()))
@@ -171,6 +207,12 @@ function notify(msg, type='info', ttl=3000){
   const id = Math.random().toString(36).slice(2)
   toasts.value.push({id,msg,type})
   setTimeout(()=>{ toasts.value = toasts.value.filter(t=>t.id!==id) }, ttl)
+}
+
+// DEV: Surface global errors as toasts
+if (import.meta.env.DEV) {
+  window.addEventListener('error', (e) => notify(`Error: ${e.error?.message || e.message}`, 'error', 6000))
+  window.addEventListener('unhandledrejection', (e) => notify(`Unhandled: ${e.reason?.message || e.reason}`, 'error', 6000))
 }
 // --- shortcuts ---
 function onKey(e){
@@ -261,6 +303,8 @@ async function load() {
     } catch {}
   } catch (e) {
     error.value = String(e)
+    notify(`Failed to load entries: ${error.value}`, 'error', 5000)
+    assignCardsToGrid([]) // still render custom lanes
   } finally {
     loading.value = false
   }
@@ -335,7 +379,7 @@ async function saveCard(payload) {
        notes: `[prio:${(payload.priority || 'Normal').toLowerCase()}]` + (payload.notes ? ` ${payload.notes}` : '')
      })
    })
-    if (!res.ok) return notify(`Failed to update: ${await res.text()}`, 'error')
+    if (!res.ok) return notify(`Failed to create: ${await res.text()}`, 'error')
   }
   await load()
 }
@@ -346,7 +390,7 @@ async function deleteCard(lane, col, card) {
     return
   }
   const res = await fetch(`${API_BASE}/api/time-entries/${card.id}`, { method: 'DELETE' })
-  if (!res.ok) return notify(`Failed to update: ${await res.text()}`, 'error')
+  if (!res.ok) return notify(`Failed to delete: ${await res.text()}`, 'error')
   await load()
 }
 
@@ -457,17 +501,20 @@ watch([currentWeekStart, groupBy], () => { load() })
         </label>
         <div class="goal">
           <div class="bar"><i :style="{ width: (weeklyPct*100)+'%' }"></i></div>
-          <span>{{ weeklyHours.toFixed(1) }} / {{ TARGET_WEEKLY_HOURS }} h</span>
+          <span>{{ fmtH(weeklyHours, 1) }} / {{ TARGET_WEEKLY_HOURS }} h</span>
         </div>
         <button type="button" @click="addLane">
           {{ groupBy === 'project_code' ? 'Add Project' : 'Add Activity' }}
+        </button>
+        <button type="button" @click="toggleTheme" :title="theme==='dark' ? 'Switch to Light' : 'Switch to Dark'">
+          {{ theme==='dark' ? '☀︎' : '🌙' }}
         </button>
       </div>
     </header>
     <section v-if="showFocus" class="focus focus--inboard">
       <header class="focus__header">
         <strong>Today — {{ todayLabel }}</strong>
-        <span class="focus__hours">{{ colHours(todayKey).toFixed(1) }} h</span>
+        <span class="focus__hours">{{ fmtH(colHours(todayKey), 1) }} h</span>
       </header>
       <div class="focus__layout">
         <aside class="focus__plan">
@@ -497,6 +544,11 @@ watch([currentWeekStart, groupBy], () => { load() })
                 </span>
               </div>
               <div class="lane-actions">
+                <button class="mini icon"
+                        @click="isLaneRunning(pair.lane) ? stopTimer() : startLaneTimer(pair.lane)"
+                        :title="isLaneRunning(pair.lane) ? 'Stop timer' : 'Start timer'">
+                  {{ isLaneRunning(pair.lane) ? '■' : '▶︎' }}
+                </button>
                 <button class="mini icon" @click="editLaneMeta(pair.lane)" title="Edit project settings">⋯</button>
                 <button class="mini icon" @click="addCard(pair.lane, pair.col)" title="Add card">＋</button>
               </div>
@@ -540,13 +592,12 @@ watch([currentWeekStart, groupBy], () => { load() })
         <div v-for="d in headerDays" :key="d.key" class="cell cell--head">
           <div class="dayhead">
             <strong>{{ d.label }}</strong>
-            <small>{{ colHours(d.key).toFixed(1) }} h</small>
+            <small>{{ fmtH(colHours(d.key), 1) }} h</small>
           </div>
         </div>
 
         <!-- Swimlane rows -->
         <template v-for="lane in swimlanes" :key="lane.key">
-          <!-- Row header cell -->
           <div class="cell cell--rowhead">
             <div class="lanehead">
               <div class="lanehead__title">
@@ -558,7 +609,12 @@ watch([currentWeekStart, groupBy], () => { load() })
                 </span>
               </div>
               <div class="lanehead__right">
-                <small>{{ laneHours(lane).toFixed(1) }} h</small>
+                <small>{{ fmtH(laneHours(lane), 1) }} h</small>
+                <button class="mini icon"
+                        @click="isLaneRunning(lane) ? stopTimer() : startLaneTimer(lane)"
+                        :title="isLaneRunning(lane) ? 'Stop timer' : 'Start timer'">
+                  {{ isLaneRunning(lane) ? '■' : '▶︎' }}
+                </button>
                 <button class="mini icon" @click="editLaneMeta(lane)" title="Edit project settings">⋯</button>
               </div>
             </div>
@@ -566,11 +622,12 @@ watch([currentWeekStart, groupBy], () => { load() })
               {{ getLaneMeta(lane.key).description }}
             </div>
           </div>
-
+          
+          <!-- Row header cell -->
           <!-- Day cells -->
           <template v-for="col in lane.columns" :key="lane.key + ':' + col.dayKey">
             <div class="cell">
-              <div class="cell__sum" v-if="cellHours(lane, col.dayKey)">{{ cellHours(lane, col.dayKey).toFixed(1) }} h</div>
+              <div class="cell__sum" v-if="cellHours(lane, col.dayKey)">{{ fmtH(cellHours(lane, col.dayKey), 1) }} h</div>
               <div class="cell__actions">
                 <button class="mini icon" @click="addCard(lane, col)" title="Add card to this cell">＋</button>
               </div>

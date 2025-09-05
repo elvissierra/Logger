@@ -6,7 +6,7 @@ from app.core.database import Base
 
 class TimeEntry(Base):
     __tablename__ = "time_entries"
-
+    __table_args__ = (Index("ix_time_entries_user_start", "user_id", "start_utc"),)
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     org_id = Column(String, nullable=True)       # optional until orgs are added
     user_id = Column(String, nullable=False)     # later -> FK to users.id
@@ -20,6 +20,3 @@ class TimeEntry(Base):
     notes = Column(Text, nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-
-# Helpful for week queries and overlap checks
-Index("ix_time_entries_user_start", TimeEntry.user_id, TimeEntry.start_utc)
