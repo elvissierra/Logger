@@ -139,6 +139,12 @@ function editLaneMeta(lane) {
   const valid = PRIORITIES.includes(normPri) ? normPri : 'Normal'
   setLaneMeta(lane.key, { description: desc, priority: valid })
 }
+// --- Lane description clamp/expand state ---
+const expandedLanes = ref({})
+function laneDesc(key){ return (getLaneMeta(key).description || '') }
+function isDescLong(key){ return laneDesc(key).length > 120 }
+function isExpanded(key){ return !!expandedLanes.value[key] }
+function toggleMoreDesc(key){ expandedLanes.value[key] = !expandedLanes.value[key] }
 
 // ---- Date helpers (local time) ----
 function pad(n) { return String(n).padStart(2, '0') }
@@ -598,31 +604,44 @@ watch([currentWeekStart, groupBy], () => { load() })
 
         <!-- Swimlane rows -->
         <template v-for="lane in swimlanes" :key="lane.key">
-          <div class="cell cell--rowhead">
-            <div class="lanehead">
-              <div class="lanehead__title">
-                <strong>{{ lane.title }}</strong>
-                <span v-if="getLaneMeta(lane.key).priority"
-                      class="badge"
-                      :class="'p-' + (getLaneMeta(lane.key).priority || 'Normal').toLowerCase()">
-                  {{ getLaneMeta(lane.key).priority }}
+        <div class="cell cell--rowhead">
+            <article class="projcard">
+              <header class="projcard__head">
+                <span
+                  class="prio-dot"
+                  :class="('p-' + (getLaneMeta(lane.key).priority || 'Normal').toLowerCase())"
+                  :title="getLaneMeta(lane.key).priority || 'Normal'">
                 </span>
-              </div>
-              <div class="lanehead__right">
-                <small>{{ fmtH(laneHours(lane), 1) }} h</small>
-                <button class="mini icon"
-                        @click="isLaneRunning(lane) ? stopTimer() : startLaneTimer(lane)"
-                        :title="isLaneRunning(lane) ? 'Stop timer' : 'Start timer'">
-                  {{ isLaneRunning(lane) ? '■' : '▶︎' }}
+                <h4 class="title">{{ lane.title }}</h4>
+                <span class="hours">{{ fmtH(laneHours(lane), 1) }} h</span>
+              </header>
+            
+              <section class="projcard__body">
+                <p class="desc" :class="{ clamped: !isExpanded(lane.key) }" v-if="laneDesc(lane.key)">
+                  {{ laneDesc(lane.key) }}
+                </p>
+                <button
+                  v-if="isDescLong(lane.key)"
+                  class="link more"
+                  @click="toggleMoreDesc(lane.key)">
+                  {{ isExpanded(lane.key) ? 'Show less' : 'Read more' }}
                 </button>
-                <button class="mini icon" @click="editLaneMeta(lane)" title="Edit project settings">⋯</button>
-              </div>
-            </div>
-            <div v-if="getLaneMeta(lane.key).description" class="lanehead__desc">
-              {{ getLaneMeta(lane.key).description }}
-            </div>
+              </section>
+            
+              <footer class="projcard__foot">
+                <div class="spacer"></div>
+                <div class="actions__icons">
+                  <button class="mini icon"
+                          @click="isLaneRunning(lane) ? stopTimer() : startLaneTimer(lane)"
+                          :title="isLaneRunning(lane) ? 'Stop timer' : 'Start timer'">
+                    {{ isLaneRunning(lane) ? '■' : '▶︎' }}
+                  </button>
+                  <button class="mini icon" @click="editLaneMeta(lane)" title="Edit project settings">⋯</button>
+                </div>
+              </footer>
+            </article>
           </div>
-          
+
           <!-- Row header cell -->
           <!-- Day cells -->
           <template v-for="col in lane.columns" :key="lane.key + ':' + col.dayKey">
@@ -647,7 +666,7 @@ watch([currentWeekStart, groupBy], () => { load() })
               >
                 <template #item="{ element }">
                   <TimeCard :card="element" :open-on-mount="element.__new === true"
-                            :running-id="runningId" :now-tick="nowTick"
+                            :running-id="runningId" :now-tick="nowTick" :compact="true"
                             @start="startTimer" @stop="stopTimer"
                             @save="saveCard" @delete="c => deleteCard(lane, col, c)" />
                 </template>
@@ -786,4 +805,37 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 .toast{ background:var(--panel); border:1px solid var(--border); color:var(--text); padding:.45rem .6rem; border-radius:10px; box-shadow:var(--shadow-sm); }
 .toast.success{ border-color:#16a34a; }
 .toast.error{ border-color:#ef4444; }
+
+/* Compact project card shown in the left row header */
+.projcard{
+  display:grid; grid-template-rows:auto 1fr auto;
+  gap:8px; background:var(--panel); border-radius:10px; padding:10px;
+  min-height:110px;
+}
+.projcard__head{
+  display:grid; grid-template-columns:auto 1fr auto;
+  align-items:center; gap:8px;
+}
+.projcard__head .title{
+  margin:0; font-size:.98rem; font-weight:800;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.projcard__head .hours{ color:var(--muted); font-weight:700; }
+.projcard__body .desc{ color:var(--muted); margin:0; }
+.projcard__body .desc.clamped{
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
+.projcard__foot{ display:flex; justify-content:flex-end; gap:.35rem; }
+.projca
+rd .link.more{
+  background:transparent; border:none; color:var(--primary);
+  padding:0; cursor:pointer;
+}
+
+/* color-only priority dot (same palette as TimeCard) */
+.prio-dot { width:10px; height:10px; border-radius:999px; display:inline-block; border:1px solid var(--border); }
+.prio-dot.p-low { background:#93c5fd; border-color:#93c5fd; }
+.prio-dot.p-normal { background:#a5b4fc; border-color:#a5b4fc; }
+.prio-dot.p-high { background:#fdba74; border-color:#fdba74; }
+.prio-dot.p-critical { background:#fca5a5; border-color:#fca5a5; }
 </style>
