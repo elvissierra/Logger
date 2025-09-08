@@ -1,6 +1,6 @@
 from logging.config import fileConfig
 import os
-
+from app.models import user  # noqa: F401
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 

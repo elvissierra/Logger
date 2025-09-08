@@ -5,9 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
-
+from app.routes.auth import _verify_and_get_user_from_access
 from app.core.database import get_db
 from app.models.time_entry import TimeEntry
+from app.core.security import require_csrf
+
 
 router = APIRouter()
 
@@ -140,7 +142,8 @@ def api_list_entries(
     return list_entries(db, skip=skip, limit=limit, user_id=user_id, date_from=date_from, date_to=date_to)
 
 @router.post("/", response_model=TimeEntryOut, status_code=status.HTTP_201_CREATED)
-def api_create_entry(payload: TimeEntryCreate, db: Session = Depends(get_db)):
+def api_create_entry(payload: TimeEntryCreate, request: Request, db: Session = Depends(get_db), user=Depends(_verify_and_get_user_from_access)):
+    require_csrf(request)
     if payload.end_utc <= payload.start_utc:
         raise HTTPException(status_code=400, detail="end_utc must be greater than start_utc")
     if has_overlap(db, user_id=payload.user_id, start_utc=payload.start_utc, end_utc=payload.end_utc):
