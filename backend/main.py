@@ -1,8 +1,9 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-
+import logging
 from app.routes.time_entries import router as time_entries_router
+from app.routes.auth import router as auth_router
 from app.core.database import Base, engine
 
 APP_NAME = os.getenv("APP_NAME", "Logger API")
@@ -12,6 +13,17 @@ _origins_env = os.getenv("BACKEND_CORS_ORIGINS", "http://localhost:5173,http://1
 BACKEND_CORS_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()]
 
 app = FastAPI(title=APP_NAME)
+
+log = logging.getLogger("uvicorn.error")
+
+@app.middleware("http")
+async def log_404s(request: Request, call_next):
+    resp = await call_next(request)
+    if request.url.path.startswith("/api/") and resp.status_code == 404:
+        ua = request.headers.get("user-agent")
+        ref = request.headers.get("referer")
+        log.warning(f"[404] {request.method} {request.url.path} UA={ua} Ref={ref} Client={request.client}")
+    return resp
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,8 +38,10 @@ app.add_middleware(
 def _startup():
     Base.metadata.create_all(bind=engine)
 
+log.info(f"[startup] {APP_NAME} booted; CORS={BACKEND_CORS_ORIGINS}")
 # Routers
 app.include_router(time_entries_router, prefix="/api/time-entries", tags=["time-entries"])
+app.include_router(auth_router,         prefix="/api/auth",         tags=["auth"])
 
 @app.get("/healthz")
 def health_check():
