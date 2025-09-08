@@ -5,6 +5,11 @@ import logging
 from app.routes.time_entries import router as time_entries_router
 from app.routes.auth import router as auth_router
 from app.core.database import Base, engine
+# Strict security middleware for production hardening
+from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware as StarletteCORS  # alias not used but avoids confusion
 
 APP_NAME = os.getenv("APP_NAME", "Logger API")
 
@@ -13,6 +18,14 @@ _origins_env = os.getenv("BACKEND_CORS_ORIGINS", "http://localhost:5173,http://1
 BACKEND_CORS_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()]
 
 app = FastAPI(title=APP_NAME)
+
+# Enforce HTTPS and trusted hosts in production
+if os.getenv("FORCE_HTTPS", "0") == "1":
+    app.add_middleware(HTTPSRedirectMiddleware)
+trusted_hosts = os.getenv("TRUSTED_HOSTS", "").split(",")
+trusted_hosts = [h.strip() for h in trusted_hosts if h.strip()]
+if trusted_hosts:
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)
 
 log = logging.getLogger("uvicorn.error")
 

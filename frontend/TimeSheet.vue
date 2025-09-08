@@ -68,13 +68,14 @@ const form = reactive({
 })
 
 async function load () {
-  const res = await fetch(`${API_BASE}/api/time-entries/`)
+  const res = await fetch(`${API_BASE}/api/time-entries/`, { credentials: 'include' })
   entries.value = await res.json()
 }
 async function create () {
   const res = await fetch(`${API_BASE}/api/time-entries/`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)?.[1] || '') },
     body: JSON.stringify(form)
   })
   if (!res.ok) {
@@ -86,7 +87,7 @@ async function create () {
   await load()
 }
 async function remove (id) {
-  const res = await fetch(`${API_BASE}/api/time-entries/${id}`, { method: 'DELETE' })
+  const res = await fetch(`${API_BASE}/api/time-entries/${id}`, { method: 'DELETE', credentials: 'include', headers: { 'X-CSRF-Token': (document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)?.[1] || '') } })
   if (!res.ok) {
     alert('Failed to delete')
     return

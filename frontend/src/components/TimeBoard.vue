@@ -24,6 +24,11 @@ const userId = localStorage.getItem('logger.userId') || 'user-123' // TODO: wire
 function setUserId(id){ localStorage.setItem('logger.userId', id) }
 const TARGET_WEEKLY_HOURS = 40
 
+function getCsrf(){
+  const m = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)
+  return m ? decodeURIComponent(m[1]) : ''
+}
+
 // --- Running timer pointer (client-side) ---
 function runningKey () { return `logger.runningEntry:${userId}` }
 const runningId = ref(localStorage.getItem(runningKey()))
@@ -38,7 +43,9 @@ async function stopRunningIfAny () {
   const id = runningId.value
   try {
     const res = await fetch(`${API_BASE}/api/time-entries/${id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
       body: JSON.stringify({ end_utc: new Date().toISOString() })
     })
     if (!res.ok) notify(`Failed to stop timer: ${await res.text()}`, 'error')
@@ -64,7 +71,9 @@ async function startTimer (seedCard) {
     notes: `[prio:${(seedCard.priority || 'Normal').toLowerCase()}]` + (seedCard.notes ? ` ${seedCard.notes}` : '')
   }
   const res = await fetch(`${API_BASE}/api/time-entries/`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
     body: JSON.stringify(payload)
   })
   if (!res.ok) {
@@ -76,7 +85,9 @@ async function startTimer (seedCard) {
   _extendHandle = setInterval(async () => {
     try {
       await fetch(`${API_BASE}/api/time-entries/${created.id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
         body: JSON.stringify({ end_utc: new Date().toISOString() })
       })
     } catch {}
@@ -362,7 +373,8 @@ async function saveCard(payload) {
   if (payload.id) {
     const res = await fetch(`${API_BASE}/api/time-entries/${payload.id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
       body: JSON.stringify({
         project_code: payload.project_code || payload.projectCode,
         activity: payload.activity,
@@ -373,18 +385,19 @@ async function saveCard(payload) {
     })
     if (!res.ok) return notify(`Failed to update: ${await res.text()}`, 'error')
   } else {
-   const res = await fetch(`${API_BASE}/api/time-entries/`, {
-     method: 'POST',
-     headers: { 'Content-Type': 'application/json' },
-     body: JSON.stringify({
-       user_id: userId,
-       project_code: payload.project_code || payload.projectCode,
-       activity: payload.activity,
-       start_utc: payload.start_utc,
-       end_utc: payload.end_utc,
-       notes: `[prio:${(payload.priority || 'Normal').toLowerCase()}]` + (payload.notes ? ` ${payload.notes}` : '')
-     })
-   })
+    const res = await fetch(`${API_BASE}/api/time-entries/`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
+      body: JSON.stringify({
+        user_id: userId,
+        project_code: payload.project_code || payload.projectCode,
+        activity: payload.activity,
+        start_utc: payload.start_utc,
+        end_utc: payload.end_utc,
+        notes: `[prio:${(payload.priority || 'Normal').toLowerCase()}]` + (payload.notes ? ` ${payload.notes}` : '')
+      })
+    })
     if (!res.ok) return notify(`Failed to create: ${await res.text()}`, 'error')
   }
   await load()
@@ -395,7 +408,11 @@ async function deleteCard(lane, col, card) {
     col.cards = col.cards.filter(c => c !== card)
     return
   }
-  const res = await fetch(`${API_BASE}/api/time-entries/${card.id}`, { method: 'DELETE' })
+  const res = await fetch(`${API_BASE}/api/time-entries/${card.id}`, {
+    method: 'DELETE',
+    credentials: 'include',
+    headers: { 'X-CSRF-Token': getCsrf() }
+  })
   if (!res.ok) return notify(`Failed to delete: ${await res.text()}`, 'error')
   await load()
 }

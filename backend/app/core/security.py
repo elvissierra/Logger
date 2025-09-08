@@ -23,15 +23,15 @@ def hash_password(p: str) -> str:
 def verify_password(p: str, h: str) -> bool:
     return pwd_context.verify(p, h)
 
-def create_access_token(sub: str) -> str:
+def create_access_token(sub: str, token_version: str = "0") -> str:
     exp = utcnow() + timedelta(minutes=ACCESS_TOKEN_MIN)
-    payload = {"sub": sub, "type": "access", "exp": exp}
+    payload = {"sub": sub, "type": "access", "exp": exp, "iat": utcnow(), "ver": token_version}
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
-def create_refresh_token(sub: str) -> Tuple[str, str]:
+def create_refresh_token(sub: str, token_version: str = "0") -> Tuple[str, str]:
     exp = utcnow() + timedelta(days=REFRESH_TOKEN_DAYS)
     jti = str(uuid.uuid4())
-    payload = {"sub": sub, "type": "refresh", "jti": jti, "exp": exp}
+    payload = {"sub": sub, "type": "refresh", "jti": jti, "exp": exp, "iat": utcnow(), "ver": token_version}
     token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
     return token, jti
 
