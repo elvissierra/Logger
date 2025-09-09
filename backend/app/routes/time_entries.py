@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from app.routes.auth import _verify_and_get_user_from_access
 from app.core.database import get_db
 from app.core.security import require_csrf
+from sqlalchemy.orm import Session
 
 # Use shared schemas to avoid duplication
 from app.schemas.time_entry import TimeEntryCreate, TimeEntryUpdate, TimeEntryOut
@@ -29,12 +30,13 @@ router = APIRouter()
 def api_list_entries(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
-    user_id: Optional[str] = Query(None, description="Filter by user"),
     date_from: Optional[datetime] = Query(None, alias="from", description="UTC ISO start inclusive"),
     date_to: Optional[datetime] = Query(None, alias="to", description="UTC ISO end exclusive"),
     db: Session = Depends(get_db),
+    user=Depends(_verify_and_get_user_from_access),
 ):
-    return crud_list_entries(db, skip=skip, limit=limit, user_id=user_id, date_from=date_from, date_to=date_to)
+    # Always scope to the authenticated user for privacy
+    return crud_list_entries(db, skip=skip, limit=limit, user_id=user.id, date_from=date_from, date_to=date_to)
 
 @router.post("/", response_model=TimeEntryOut, status_code=status.HTTP_201_CREATED)
 def api_create_entry(payload: TimeEntryCreate, request: Request, db: Session = Depends(get_db), user=Depends(_verify_and_get_user_from_access)):

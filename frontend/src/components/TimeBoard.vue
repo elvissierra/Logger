@@ -297,6 +297,8 @@ const ordered = []
 for (const name of customs) ordered.push(lanesMap.get(name))
 for (const [k, v] of lanesMap) if (!customs.includes(k)) ordered.push(v)
 if (!ordered.length) ordered.push(buildEmptySwimlane('Ungrouped', 'Ungrouped'))
+
+
 swimlanes.value = ordered
 applyLocalOrder()
 }
@@ -306,8 +308,8 @@ async function load() {
   try {
     const monday = currentWeekStart.value
     const nextMonday = addDays(monday, 7)
-    const qs = new URLSearchParams({ user_id: userId, from: monday.toISOString(), to: nextMonday.toISOString() }).toString()
-    const res = await fetch(`${API_BASE}/api/time-entries/?${qs}`)
+    const qs = new URLSearchParams({ from: monday.toISOString(), to: nextMonday.toISOString() }).toString()
+    const res = await fetch(`${API_BASE}/api/time-entries/?${qs}`, { credentials: 'include' })
     if (!res.ok) throw new Error(await res.text())
     const data = await res.json()
     assignCardsToGrid(data)
@@ -855,4 +857,12 @@ rd .link.more{
 .prio-dot.p-normal { background:#a5b4fc; border-color:#a5b4fc; }
 .prio-dot.p-high { background:#fdba74; border-color:#fdba74; }
 .prio-dot.p-critical { background:#fca5a5; border-color:#fca5a5; }
+
+
+.focus__lane + .focus__lane,
+.board .lane + .lane {
+  border-top: 1px solid var(--border);
+  margin-top: .5rem;
+  padding-top: .5rem;
+}
 </style>
