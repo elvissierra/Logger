@@ -13,7 +13,8 @@ const props = defineProps({
   openOnMount: { type: Boolean, default: false },
   runningId: { type: String, default: null },
   nowTick: { type: Number, default: 0 },
-  compact: { type: Boolean, default: false }
+  compact: { type: Boolean, default: false },
+  heightPx: { type: Number, default: null }
 })
 const emit = defineEmits(['save', 'delete', 'start', 'stop'])
 const isRunning = computed(() => props.runningId && props.card.id === props.runningId)
@@ -105,7 +106,14 @@ function onStop(){ emit('stop', props.card) }
 </script>
 
 <template>
-  <article class="tcard" :class="{ editing, compact }">
+  <article
+    class="tcard"
+    :class="{ editing, compact }"
+    :style="compact
+      ? { minHeight: (heightPx || Math.max(72, Math.round(durationHours*40))) + 'px',
+          height:    (heightPx || Math.max(72, Math.round(durationHours*40))) + 'px' }
+      : {}"
+  >
     <!-- Full header (focus cards) -->
     <header v-if="!compact" class="tcard__head">
       <span class="handle" title="Drag to reorder" aria-label="Drag handle">☰</span>
@@ -123,31 +131,19 @@ function onStop(){ emit('stop', props.card) }
     </header>
 
     <!-- Compact weekly card: only a Details dropdown -->
-<section v-if="compact" class="tcard__body tcard__body--compact">
-  <details v-if="card.description || card.notes" class="mini-details">
-    <summary>Details</summary>
-    <p v-if="card.description" class="desc">{{ card.description }}</p>
-    <p v-if="card.notes" class="notes"><em>{{ card.notes }}</em></p>
-  </details>
-</section>
+    <section v-if="compact" class="tcard__body tcard__body--compact"></section>
 
-<!-- Full card (focus area) -->
-<section v-else-if="!editing" class="tcard__body" @dblclick="editing = true">
-  <p class="desc" :class="{ clamped: !showFullDesc }" v-if="card.description">{{ card.description }}</p>
-  <button v-if="card.description && isClampedCandidate" class="link more" @click="showFullDesc = !showFullDesc">
-    {{ showFullDesc ? 'Show less' : 'Read more' }}
-  </button>
-  <p class="notes" v-if="card.notes"><em>{{ card.notes }}</em></p>
-
-  <div class="meta" v-if="card.start_utc && card.end_utc">
-    <span class="time">
-      {{ new Date(card.start_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }} →
-      {{ new Date(card.end_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }}
-    </span>
-    <span class="sep">•</span>
-    <span class="hours">{{ fmtH(durationHours, 2) }} h</span>
-  </div>
-</section>
+    <!-- Full card (focus area) — description/notes intentionally hidden -->
+    <section v-else-if="!editing" class="tcard__body" @dblclick="editing = true">
+      <div class="meta" v-if="card.start_utc && card.end_utc">
+        <span class="time">
+          {{ new Date(card.start_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }} →
+          {{ new Date(card.end_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }}
+        </span>
+        <span class="sep">•</span>
+        <span class="hours">{{ fmtH(durationHours, 2) }} h</span>
+      </div>
+    </section>
 
     <section v-else class="tcard__edit">
       <div class="grid">
@@ -203,6 +199,7 @@ function onStop(){ emit('stop', props.card) }
 .tcard {
   display: grid;
   grid-template-rows: auto 1fr auto; /* header | body grows | footer at bottom */
+  grid-auto-rows: min-content;
   gap: .55rem;
   background: var(--card, #ffffff);
   border: 1px solid var(--border, #e5e7eb);
@@ -214,8 +211,14 @@ function onStop(){ emit('stop', props.card) }
   min-height: 132px; /* ensure room so footer doesn't crowd header */
 }
 .tcard:hover { box-shadow: var(--shadow-md, 0 6px 16px rgba(0,0,0,.08)); border-color: color-mix(in srgb, var(--border, #e5e7eb) 70%, var(--primary, #5b8cff) 30%); }
-.tcard.editing { background: var(--panel, #f6f7fb); }
-
+.tcard.editing { background: var(--panel, #7282c2); }
+.tcard__body { color: var(--text, #374151); min-height: 52px; overflow: hidden; }
+.tcard__body--compact { overflow: hidden; } /* weekly grid variant */
+.tcard__body p { margin: .25rem 0; word-break: break-word; overflow-wrap: anywhere; }
+.tcard .desc,
+.tcard .notes { display: none !important; }
+.tcard__body--compact .desc,
+.tcard__body--compact .notes { display: none; }
 .tcard__head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .6rem; }
 .handle { cursor: grab; user-select: none; font-size: 1rem; line-height: 1; opacity: .7; }
 .tcard__title { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
@@ -237,7 +240,7 @@ function onStop(){ emit('stop', props.card) }
 .link.more { background: transparent; border: none; color: var(--primary, #5b8cff); padding: 0; cursor: pointer; }
 
 /* footer actions */
-.tcard__foot { display: flex; justify-content: flex-end; gap: .35rem; margin-top: 0; }
+.tcard__foot { display: flex; justify-content: flex-end; gap: .35rem; margin-top: 0; align-self: end;}
 .prio { font-size: .75rem; padding: .15rem .45rem; border-radius: 999px; border: 1px solid var(--border, #e5e7eb); }
 .prio.p-low { background: #eef6ff; color: #1e3a8a; }
 .prio.p-normal { background: #eef2ff; color: #3730a3; }
@@ -246,13 +249,6 @@ function onStop(){ emit('stop', props.card) }
 .icon { border: 1px solid var(--border, #e5e7eb); border-radius: 8px; background: var(--panel-2, #f3f4f6); cursor: pointer; padding: .25rem .45rem; line-height: 1; }
 .icon:hover { background: #e9eef7; }
 .hint{ align-self:center; color:var(--muted); font-size:.85rem; margin-left:.25rem; }
-
-.tcard__body { color: var(--text, #374151); min-height: 52px; }
-.tcard__body p { margin: .25rem 0; word-break: break-word; }
-.desc { margin: .2rem 0; color: var(--text, #111827); }
-.notes { margin: .2rem 0; color: var(--muted, #6b7280); }
-.meta { display: flex; align-items: center; gap: .4rem; color: var(--muted, #6b7280); font-size: .9rem; }
-.sep { opacity: .5; }
 
 .tcard__edit .grid { display: grid; gap: .5rem; }
 .tcard__edit label { display: grid; gap: .25rem; }
@@ -275,7 +271,9 @@ button.danger { border-color: #ef4444; color: #b91c1c; }
 .hours-lg { font-weight: 800; font-size: 1.05rem; }
 .tcard.compact .handle,
 .tcard.compact .tcard__title,
-.tcard.compact .meta { display: none; }
+.tcard.compact .meta,
+.tcard__body--compact .desc,
+.tcard__body--compact .notes { display: none !important; }
 .tcard.compact .tcard__foot { display: none; }
 
 .mini-details { border-top: 1px dashed var(--border); padding-top: .35rem; }
