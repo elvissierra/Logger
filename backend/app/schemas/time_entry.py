@@ -10,7 +10,7 @@ class TimeEntryBase(BaseModel):
     notes: Optional[str] = None
 
 class TimeEntryCreate(TimeEntryBase):
-    user_id: str
+    user_id: Optional[str] = None
 
 class TimeEntryUpdate(BaseModel):
     project_code: Optional[str] = None

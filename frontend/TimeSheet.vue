@@ -8,10 +8,6 @@
       <fieldset>
         <legend>New Entry</legend>
         <label>
-          User ID
-          <input v-model="form.user_id" placeholder="user-123" required />
-        </label>
-        <label>
           Project Code
           <input v-model="form.project_code" placeholder="PJ-001" required />
         </label>
@@ -57,9 +53,7 @@ import { reactive, ref, onMounted } from 'vue'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000'
 const entries = ref([])
-
 const form = reactive({
-  user_id: 'user-123',
   project_code: 'PJ-001',
   activity: 'Paperwork',
   start_utc: '',
@@ -76,7 +70,13 @@ async function create () {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)?.[1] || '') },
-    body: JSON.stringify(form)
+    body: JSON.stringify({
+    project_code: form.project_code,
+    activity: form.activity,
+    start_utc: form.start_utc,
+    end_utc: form.end_utc,
+    notes: form.notes
+  })
   })
   if (!res.ok) {
     const msg = await res.text()
