@@ -75,8 +75,10 @@ function toLocalInput(iso) {
 // datetime-local -> ISO (UTC)
 function fromLocalInput(localStr) {
   if (!localStr) return ''
-  const d = new Date(localStr)
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString()
+  const d = new Date(localStr) // local time
+  const ms = 15 * 60 * 1000
+  const roundedLocal = new Date(Math.round(d.getTime() / ms) * ms)
+  return new Date(roundedLocal.getTime() - roundedLocal.getTimezoneOffset() * 60000).toISOString()
 }
 
 const durationHours = computed(() => {
@@ -110,8 +112,8 @@ function onStop(){ emit('stop', props.card) }
     class="tcard"
     :class="{ editing, compact }"
     :style="compact
-      ? { minHeight: (heightPx || Math.max(72, Math.round(durationHours*40))) + 'px',
-          height:    (heightPx || Math.max(72, Math.round(durationHours*40))) + 'px' }
+      ? { minHeight: (heightPx || Math.max(48, Math.round(durationHours*28))) + 'px',
+          height:    (heightPx || Math.max(48, Math.round(durationHours*28))) + 'px' }
       : {}"
   >
     <!-- Full header (focus cards) -->
@@ -122,7 +124,7 @@ function onStop(){ emit('stop', props.card) }
         <strong class="title">{{ card.jobTitle || card.projectCode || 'Untitled' }}</strong>
         <span class="chip" v-if="card.activity">{{ card.activity }}</span>
       </div>
-      <div class="hours" v-if="durationHours > 0">{{ fmtH(durationHours, 1) }} h</div>
+      <div class="hours" v-if="durationHours > 0">{{ fmtH(durationHours, 2) }} h</div>
     </header>
 
     <!-- Compact header (weekly grid cards) -->
@@ -169,10 +171,10 @@ function onStop(){ emit('stop', props.card) }
         </label>
         <div class="row">
           <label>Start
-            <input type="datetime-local" v-model="local.start_local" />
+            <input type="datetime-local" step="900", v-model="local.start_local" />
           </label>
           <label>End
-            <input type="datetime-local" v-model="local.end_local" />
+            <input type="datetime-local" step="900", v-model="local.end_local" />
           </label>
         </div>
       </div>
@@ -266,9 +268,9 @@ button.primary { background: linear-gradient(180deg, var(--primary, #5b8cff), va
 button.danger { border-color: #ef4444; color: #b91c1c; }
  .actions__icons { display: flex; gap: .35rem; }
 /* --- Compact variant for weekly grid --- */
-.tcard.compact { padding: .55rem .6rem; min-height: 88px; grid-template-rows: auto 1fr; }
+.tcard.compact { padding: .45rem .5rem; min-height: 48px; grid-template-rows: auto 1fr; }
 .tcard__head--compact { display:flex; align-items:center; justify-content:flex-start; }
-.hours-lg { font-weight: 800; font-size: 1.05rem; }
+.hours-lg { font-weight: 800; font-size: .95rem; }
 .tcard.compact .handle,
 .tcard.compact .tcard__title,
 .tcard.compact .meta,
