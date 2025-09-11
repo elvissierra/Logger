@@ -181,6 +181,20 @@ function hoursBetween(isoA, isoB) {
   const b = new Date(isoB).getTime()
   return Math.max(0, (b - a) / 3600000)
 }
+function roundHMToQuarter(hm) {
+  const parts = (hm || '00:00').split(':')
+  const h = parseInt(parts[0] || '0', 10)
+  const m = parseInt(parts[1] || '0', 10)
+  const total = h * 60 + m
+  const rounded = Math.round(total / 15) * 15
+  const rh = Math.floor(rounded / 60)
+  const rm = rounded % 60
+  return `${pad(rh)}:${pad(rm)}`
+}
+function roundDateToQuarter(d) {
+  const ms = 15 * 60 * 1000
+  return new Date(Math.round(d.getTime() / ms) * ms)
+}
 // Safe hours formatter to avoid undefined.toFixed crashes
 function fmtH(n, d = 1) {
   const x = Number(n)
@@ -422,8 +436,8 @@ async function deleteCard(lane, col, card) {
 function addCard(lane, col) {
   const now = new Date()
   const hm = `${pad(now.getHours())}:${pad(now.getMinutes())}`
-  const startLocal = new Date(`${col.dayKey}T${hm}`)
-  const endLocal   = new Date(startLocal.getTime() + 30 * 60000)
+  const startLocal = roundDateToQuarter(new Date(`${col.dayKey}T${hm}`))
+  const endLocal   = new Date(startLocal.getTime() + 15 * 60000)
 
   const card = {
     id: (crypto?.randomUUID?.() || `tmp_${Date.now()}_${Math.random().toString(16).slice(2)}`),
@@ -443,8 +457,8 @@ function addCard(lane, col) {
 function onCellChange(lane, col, evt) {
   if (evt?.added) {
     const card = evt.added.element
-    const startHM = timeHMFromISO(card.start_utc || new Date().toISOString())
-    const endHM   = timeHMFromISO(card.end_utc || startHM)
+    const startHM = roundHMToQuarter(timeHMFromISO(card.start_utc || new Date().toISOString()))
+    const endHM   = roundHMToQuarter(timeHMFromISO(card.end_utc || startHM))
     card.start_utc = composeISOFromLaneAndTime(col.dayKey, startHM)
     card.end_utc   = composeISOFromLaneAndTime(col.dayKey, endHM)
 
@@ -526,7 +540,7 @@ watch([currentWeekStart, groupBy], () => { load() })
         </label>
         <div class="goal">
           <div class="bar"><i :style="{ width: (weeklyPct*100)+'%' }"></i></div>
-          <span>{{ fmtH(weeklyHours, 1) }} / {{ TARGET_WEEKLY_HOURS }} h</span>
+          <span>{{ fmtH(weeklyHours, 2) }} / {{ TARGET_WEEKLY_HOURS }} h</span>
         </div>
         <button type="button" @click="addLane">
           {{ groupBy === 'project_code' ? 'Add Project' : 'Add Activity' }}
@@ -539,7 +553,7 @@ watch([currentWeekStart, groupBy], () => { load() })
     <section v-if="showFocus" class="focus focus--inboard">
       <header class="focus__header">
         <strong>Today — {{ todayLabel }}</strong>
-        <span class="focus__hours">{{ fmtH(colHours(todayKey), 1) }} h</span>
+        <span class="focus__hours">{{ fmtH(colHours(todayKey), 2) }} h</span>
       </header>
       <div class="focus__layout">
         <aside class="focus__plan">
@@ -617,7 +631,7 @@ watch([currentWeekStart, groupBy], () => { load() })
         <div v-for="d in headerDays" :key="d.key" class="cell cell--head">
           <div class="dayhead">
             <strong>{{ d.label }}</strong>
-            <small>{{ fmtH(colHours(d.key), 1) }} h</small>
+            <small>{{ fmtH(colHours(d.key), 2) }} h</small>
           </div>
         </div>
 
@@ -632,7 +646,7 @@ watch([currentWeekStart, groupBy], () => { load() })
                   :title="getLaneMeta(lane.key).priority || 'Normal'">
                 </span>
                 <h4 class="title">{{ lane.title }}</h4>
-                <span class="hours">{{ fmtH(laneHours(lane), 1) }} h</span>
+                <span class="hours">{{ fmtH(laneHours(lane), 2) }} h</span>
               </header>
             
               <section class="projcard__body">
@@ -665,13 +679,12 @@ watch([currentWeekStart, groupBy], () => { load() })
           <!-- Day cells -->
           <template v-for="col in lane.columns" :key="lane.key + ':' + col.dayKey">
             <div class="cell">
-              <div class="cell__sum" v-if="cellHours(lane, col.dayKey)">{{ fmtH(cellHours(lane, col.dayKey), 1) }} h</div>
+              <div class="cell__sum" v-if="cellHours(lane, col.dayKey)">{{ fmtH(cellHours(lane, col.dayKey), 2) }} h</div>
               <div class="cell__actions">
                 <button class="mini icon" @click="addCard(lane, col)" title="Add card to this cell">＋</button>
               </div>
-              <div v-if="!col.cards.length" class="cell__empty">No entries</div>
-              <draggable
-                v-model="col.cards"
+              <!-- Only render the list when there are actual entries -->
+              <draggable v-if="col.cards.length" v-model="col.cards"
                 item-key="id"
                 :animation="160"
                 class="droplist"
@@ -839,6 +852,8 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 .projcard__head .hours{ color:var(--muted); font-weight:700; }
+/* Hide project description in weekly grid row header */
+.projcard__body { display: none; }
 .projcard__body .desc{ color:var(--muted); margin:0; }
 .projcard__body .desc.clamped{
   display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
