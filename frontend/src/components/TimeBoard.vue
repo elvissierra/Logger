@@ -63,6 +63,7 @@ async function startTimer (seedCard) {
   const now = new Date()
   const inOneMin = new Date(now.getTime() + 60 * 1000)
   const payload = {
+    user_id: userId,
     project_code: seedCard.project_code || seedCard.projectCode || '',
     activity: seedCard.activity || '',
     start_utc: now.toISOString(),
@@ -391,6 +392,7 @@ async function saveCard(payload) {
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
       body: JSON.stringify({
+        user_id: userId,
         project_code: payload.project_code || payload.projectCode,
         activity: payload.activity,
         start_utc: payload.start_utc,
@@ -579,32 +581,26 @@ watch([currentWeekStart, groupBy], () => { load() })
             <div v-if="getLaneMeta(pair.lane.key).description" class="focus__lanedesc">
               {{ getLaneMeta(pair.lane.key).description }}
             </div>
-            <details class="lane-details">
-              <summary class="lane-summary">
-                <span>Entries ({{ pair.col.cards.length }})</span>
-                <span class="hours-badge">{{ fmtH(cellHours(pair.lane, pair.col.dayKey), 1) }} h</span>
-              </summary>
-              <draggable
-                v-model="pair.col.cards"
-                item-key="id"
-                :animation="160"
-                handle=".handle"
-                class="focus__droplist"
-                :group="{ name: 'cards', pull: true, put true: true }"
-                ghost-class="drag-ghost"
-                chosen-class="drag-chosen"
-                drag-class="drag-dragging"
-                @change="onCellChange(pair.lane, pair.col, $event)"
-                @end="onReorderCell(pair.lane, pair.col.dayKey)"
-              >
-                <template #item="{ element }">
-                  <TimeCard :card="element" :open-on-mount="element.__new === true"
-                            :running-id="runningId" :now-tick="nowTick"
-                            @start="startTimer" @stop="stopTimer"
-                            @save="saveCard" @delete="c => deleteCard(pair.lane, pair.col, c)" />
-                </template>
-              </draggable>
-            </details>
+            <draggable
+              v-model="pair.col.cards"
+              item-key="id"
+              :animation="160"
+              handle=".handle"
+              class="focus__droplist"
+              :group="{ name: 'cards', pull: true, put: true }"
+              ghost-class="drag-ghost"
+              chosen-class="drag-chosen"
+              drag-class="drag-dragging"
+              @change="onCellChange(pair.lane, pair.col, $event)"
+              @end="onReorderCell(pair.lane, pair.col.dayKey)"
+            >
+              <template #item="{ element }">
+                <TimeCard :card="element" :open-on-mount="element.__new === true"
+                          :running-id="runningId" :now-tick="nowTick"
+                          @start="startTimer" @stop="stopTimer"
+                          @save="saveCard" @delete="c => deleteCard(pair.lane, pair.col, c)" />
+              </template>
+            </draggable>
           </div>
         </div>
       </div>
@@ -674,32 +670,25 @@ watch([currentWeekStart, groupBy], () => { load() })
                 <button class="mini icon" @click="addCard(lane, col)" title="Add card to this cell">＋</button>
               </div>
               <div v-if="!col.cards.length" class="cell__empty">No entries</div>
-              <details class="lane-details">
-                <summary class="lane-summary">
-                  <span>Entries ({{ pair.col.cards.length }})</span>
-                  <span class="hours-badge">{{ fmtH(cellHours(pair.lane, pair.col.dayKey), 1) }} h</span>
-                </summary>
-                <draggable
-                  v-model="pair.col.cards"
-                  item-key="id"
-                  :animation="160"
-                  handle=".handle"
-                  class="focus__droplist"
-                  :group="{ name: 'cards', pull: true, put true: true }"
-                  ghost-class="drag-ghost"
-                  chosen-class="drag-chosen"
-                  drag-class="drag-dragging"
-                  @change="onCellChange(pair.lane, pair.col, $event)"
-                  @end="onReorderCell(pair.lane, pair.col.dayKey)"
-                >
-                  <template #item="{ element }">
-                    <TimeCard :card="element" :open-on-mount="element.__new === true"
-                              :running-id="runningId" :now-tick="nowTick"
-                              @start="startTimer" @stop="stopTimer"
-                              @save="saveCard" @delete="c => deleteCard(pair.lane, pair.col, c)" />
-                  </template>
-                </draggable>
-              </details>
+              <draggable
+                v-model="col.cards"
+                item-key="id"
+                :animation="160"
+                class="droplist"
+                :group="{ name: 'cards', pull: true, put: true }"
+                ghost-class="drag-ghost"
+                chosen-class="drag-chosen"
+                drag-class="drag-dragging"
+                @change="onCellChange(lane, col, $event)"
+                @end="onReorderCell(lane, col.dayKey)"
+              >
+                <template #item="{ element }">
+                  <TimeCard :card="element" :open-on-mount="element.__new === true"
+                            :running-id="runningId" :now-tick="nowTick" :compact="true"
+                            @start="startTimer" @stop="stopTimer"
+                            @save="saveCard" @delete="c => deleteCard(lane, col, c)" />
+                </template>
+              </draggable>
             </div>
           </template>
         </template>
@@ -855,8 +844,7 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
   display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
 }
 .projcard__foot{ display:flex; justify-content:flex-end; gap:.35rem; }
-.projca
-rd .link.more{
+.projcard .link.more{
   background:transparent; border:none; color:var(--primary);
   padding:0; cursor:pointer;
 }
@@ -868,50 +856,4 @@ rd .link.more{
 .prio-dot.p-high { background:#fdba74; border-color:#fdba74; }
 .prio-dot.p-critical { background:#fca5a5; border-color:#fca5a5; }
 
-
-.focus__lane + .focus__lane,
-.board .lane + .lane {
-  border-top: 1px solid var(--border);
-  margin-top: .5rem;
-  padding-top: .5rem;
-}
-
-<style scoped>
-/* Collapsible lists (focus lanes & weekly cells) */
-.lane-details, .cell-details { width: 100%; }
-.lane-summary, .cell-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: .5rem;
-  padding: .25rem .4rem;
-  border: 1px dashed var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--btn-blue-bg, #eaf2ff) 35%, transparent);
-  cursor: pointer;
-  user-select: none;
-  list-style: none;
-}
-.lane-summary::-webkit-details-marker,
-.cell-summary::-webkit-details-marker { display: none; }
-
-.hours-badge {
-  display: inline-block;
-  padding: .1rem .45rem;
-  border-radius: 999px;
-  font-weight: 600;
-  font-size: .8rem;
-  background: var(--btn-blue-bg, #eaf2ff);
-  border: 1px solid var(--border);
-}
-.cell-summary .count { color: var(--muted); font-size: .8rem; }
-.focus__droplist { margin-top: .5rem; }
-
-/* Keep projects stacked in the Today column */
-.focus__layout {
-  display: flex;
-  flex-direction: column;
-  gap: .75rem;
-}
-.focus__lane { width: 100%; }
 </style>

@@ -50,10 +50,12 @@ def api_create_entry(payload: TimeEntryCreate, request: Request, db: Session = D
     return crud_create_entry(db, payload2)
 
 @router.get("/{entry_id}", response_model=TimeEntryOut)
-def api_get_entry(entry_id: str, db: Session = Depends(get_db)):
+def api_get_entry(entry_id: str, db: Session = Depends(get_db), user=Depends(_verify_and_get_user_from_access)):
     entry = crud_get_entry(db, entry_id)
     if not entry:
         raise HTTPException(status_code=404, detail="TimeEntry not found")
+    if entry.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Forbidden")
     return entry
 
 @router.patch("/{entry_id}", response_model=TimeEntryOut)
