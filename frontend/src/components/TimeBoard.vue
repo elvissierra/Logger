@@ -228,6 +228,24 @@ const GROUPS = [
 ]
 const groupBy = ref('project_code')
 
+// --- Layout toggle (grid vs simple) ---
+const layoutMode = ref(localStorage.getItem('logger.layoutMode') || 'grid')
+watch(layoutMode, (m) => localStorage.setItem('logger.layoutMode', m))
+
+// Selected day for the simple layout (defaults to today within current week)
+const selectedDayKey = ref('')
+function colFor(lane, dayKey) {
+  return lane.columns.find(c => c.dayKey === dayKey) || { dayKey, cards: [] }
+}
+watch([headerDays, currentWeekStart], () => {
+  const keys = headerDays.value.map(d => d.key)
+  if (!keys.length) return
+  const todayK = dateKey(new Date())
+  if (!keys.includes(selectedDayKey.value)) {
+    selectedDayKey.value = keys.includes(todayK) ? todayK : keys[0]
+  }
+}, { immediate: true })
+
 // ---- State ----
 const swimlanes = ref([])
 const loading = ref(false)
@@ -538,6 +556,13 @@ watch([currentWeekStart, groupBy], () => { load() })
             <option v-for="g in GROUPS" :key="g.value" :value="g.value">{{ g.label }}</option>
           </select>
         </label>
+        <label class="group">
+          Layout
+          <select v-model="layoutMode">
+            <option value="grid">Board</option>
+            <option value="simple">Simple</option>
+          </select>
+        </label>
         <div class="goal">
           <div class="bar"><i :style="{ width: (weeklyPct*100)+'%' }"></i></div>
           <span>{{ fmtH(weeklyHours, 2) }} / {{ TARGET_WEEKLY_HOURS }} h</span>
@@ -550,7 +575,7 @@ watch([currentWeekStart, groupBy], () => { load() })
         </button>
       </div>
     </header>
-    <section v-if="showFocus" class="focus focus--inboard">
+    <section v-if="layoutMode==='grid' && showFocus" class="focus focus--inboard">
       <header class="focus__header">
         <strong>Today — {{ todayLabel }}</strong>
         <span class="focus__hours">{{ fmtH(colHours(todayKey), 2) }} h</span>
@@ -624,7 +649,7 @@ watch([currentWeekStart, groupBy], () => { load() })
     <p v-if="loading">Loading…</p>
 
     <!-- Scroller keeps header row and columns aligned on all widths -->
-    <div class="board__scroller">
+    <div class="board__scroller" v-if="layoutMode==='grid'">
       <div class="grid">
         <!-- Header row -->
         <div class="cell cell--head cell--rowhead"></div>
@@ -707,6 +732,78 @@ watch([currentWeekStart, groupBy], () => { load() })
         </template>
       </div>
     </div>
+    <!-- Simple layout: per-day stacks per project -->
+    <section v-if="layoutMode==='simple'" class="simple">
+      <div class="simple__days">
+        <button
+          v-for="d in headerDays"
+          :key="d.key"
+          :class="['simple__daybtn', { active: d.key === selectedDayKey }]"
+          @click="selectedDayKey = d.key"
+        >
+          <span class="lbl">{{ d.label }}</span>
+          <small class="sum">{{ fmtH(colHours(d.key), 2) }} h</small>
+        </button>
+      </div>
+
+      <div class="simple__lanes">
+        <div class="simple__lane" v-for="lane in swimlanes" :key="lane.key">
+          <header class="simple__lanehead">
+            <h3 class="title">{{ lane.title }}</h3>
+            <div class="right">
+              <span class="badge hours">{{ fmtH(cellHours(lane, selectedDayKey), 2) }} h</span>
+              <button class="mini icon" @click="addCard(lane, colFor(lane, selectedDayKey))" title="Add entry">＋</button>
+              <button class="mini icon"
+                      @click="isLaneRunning(lane) ? stopTimer() : startLaneTimer(lane)"
+                      :title="isLaneRunning(lane) ? 'Stop timer' : 'Start timer'">
+                {{ isLaneRunning(lane) ? '■' : '▶︎' }}
+              </button>
+            </div>
+          </header>
+
+          <div class="simple__entries">
+            <draggable
+              v-if="colFor(lane, selectedDayKey).cards.length"
+              v-model="colFor(lane, selectedDayKey).cards"
+              item-key="id"
+              :animation="160"
+              class="simple__droplist"
+              :group="{ name: 'cards', pull: true, put: true }"
+              ghost-class="drag-ghost"
+              chosen-class="drag-chosen"
+              drag-class="drag-dragging"
+              @change="onCellChange(lane, colFor(lane, selectedDayKey), $event)"
+              @end="onReorderCell(lane, selectedDayKey)"
+            >
+              <template #item="{ element }">
+                <TimeCard
+                  :card="element"
+                  :compact="true"
+                  :open-on-mount="element.__new === true"
+                  :running-id="runningId"
+                  :now-tick="nowTick"
+                  @start="startTimer"
+                  @stop="stopTimer"
+                  @save="saveCard"
+                  @delete="c => deleteCard(lane, colFor(lane, selectedDayKey), c)"
+                />
+              </template>
+            </draggable>
+
+            <!-- CTA when no entries yet -->
+            <button
+              v-else
+              class="simple__cta"
+              @click="addCard(lane, colFor(lane, selectedDayKey))"
+              title="Start a new entry"
+            >
+              <span>Start a new entry</span>
+              <span class="arrow">▶︎</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
   </section>
 </template>
 
@@ -871,4 +968,76 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 .prio-dot.p-high { background:#fdba74; border-color:#fdba74; }
 .prio-dot.p-critical { background:#fca5a5; border-color:#fca5a5; }
 
+
+/* --- Simple layout styles (cardy) --- */
+.simple { display: grid; gap: 16px; margin-top: 12px; }
+
+/* Day chips */
+.simple__days { display: flex; gap: 8px; flex-wrap: wrap; }
+.simple__daybtn {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 999px;
+  padding: .35rem .7rem;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+.simple__daybtn.active { background: var(--btn-blue-bg); }
+
+/* Project lane as a card */
+.simple__lanes { display: grid; gap: 16px; }
+.simple__lane {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: var(--shadow-sm);
+}
+.simple__lanehead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.simple__lanehead .title { margin: 0; font-size: 1.05rem; }
+.simple__lanehead .right { display: inline-flex; gap: 6px; align-items: center; }
+.badge.hours { background: var(--btn-blue-bg); border: 1px solid var(--border); }
+
+
+/* Entries container: 4-column grid */
+.simple__entries { display: block; }
+
+.simple__droplist {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  align-items: start;
+}
+
+/* Responsive fallbacks */
+@media (max-width: 1200px) {
+  .simple__droplist { grid-template-columns: repeat(3, minmax(220px, 1fr)); }
+}
+@media (max-width: 900px) {
+  .simple__droplist { grid-template-columns: repeat(2, minmax(200px, 1fr)); }
+}
+@media (max-width: 560px) {
+  .simple__droplist { grid-template-columns: 1fr; }
+}
+
+/* Keep each TimeCard looking like a small card */
+.simple__droplist :deep(.tcard) {
+  background: var(--panel);
+  border-color: var(--border);
+  box-shadow: var(--shadow-sm);
+  border-radius: 10px;
+  min-height: 64px;
+}
+
+/* CTA when there are no entries — make it a card too */
+.simple__cta {
+  display: inline-flex; justify-content: space-between; align-items: center; gap: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: .7rem .95rem; border-radius: 10px; cursor: pointer; box-shadow: var(--shadow-sm);
+}
+.simple__cta .arrow { font-size: 1.05rem; }
 </style>
