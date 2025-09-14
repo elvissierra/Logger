@@ -125,7 +125,7 @@ onMounted(() => { load(); window.addEventListener('keydown', onKey) })
 onUnmounted(() => window.removeEventListener('keydown', onKey))
 
 
-const PRIORITIES = ['Low','Normal','High','Critical']
+const PRIORITIES = ['Low','Medium','High','Critical']
 
 function parsePriorityAndCleanNotes(notes) {
   if (!notes) return { priority: 'Normal', notes: '' }
@@ -221,7 +221,7 @@ function prevWeek() { currentWeekStart.value = addDays(currentWeekStart.value, -
 function nextWeek() { currentWeekStart.value = addDays(currentWeekStart.value, 7) }
 function goToToday() { currentWeekStart.value = startOfWeek(new Date()) }
 
-// ---- Grouping (rows) ----
+// ---- Grouping (columns) ----
 const GROUPS = [
   { value: 'project_code', label: 'Project' },
   { value: 'activity', label: 'Activity' },
@@ -250,6 +250,7 @@ watch([headerDays, currentWeekStart], () => {
 const swimlanes = ref([])
 const loading = ref(false)
 const error = ref('')
+
 // --- toasts ---
 const toasts = ref([])
 function notify(msg, type='info', ttl=3000){
@@ -589,7 +590,6 @@ watch([currentWeekStart, groupBy], () => { load() })
             class="focus__textarea"
             placeholder='e.g., "this is what I plan to work on today"'
           ></textarea>
-          <small class="focus__hint">Saved locally for now</small>
         </aside>
 
         <div class="focus__col">
@@ -745,17 +745,16 @@ watch([currentWeekStart, groupBy], () => { load() })
           <small class="sum">{{ fmtH(colHours(d.key), 2) }} h</small>
         </button>
       </div>
-
       <div class="simple__lanes">
         <div class="simple__lane" v-for="lane in swimlanes" :key="lane.key">
           <header class="simple__lanehead">
             <h3 class="title">{{ lane.title }}</h3>
             <div class="right">
               <span class="badge hours">{{ fmtH(cellHours(lane, selectedDayKey), 2) }} h</span>
-              <button class="mini icon" @click="addCard(lane, colFor(lane, selectedDayKey))" title="Add entry">＋</button>
+              <!-- Single toggle: Start new entry (also stops previous) / Stop running entry -->
               <button class="mini icon"
                       @click="isLaneRunning(lane) ? stopTimer() : startLaneTimer(lane)"
-                      :title="isLaneRunning(lane) ? 'Stop timer' : 'Start timer'">
+                      :title="isLaneRunning(lane) ? 'Stop' : 'Start new entry'">
                 {{ isLaneRunning(lane) ? '■' : '▶︎' }}
               </button>
             </div>
@@ -794,11 +793,11 @@ watch([currentWeekStart, groupBy], () => { load() })
             <button
               v-else
               class="simple__cta"
-              @click="addCard(lane, colFor(lane, selectedDayKey))"
+              @click="startLaneTimer(lane)"
               title="Start a new entry"
             >
               <span>Start a new entry</span>
-              <span class="arrow">▶︎</span>
+              <span class="arrow"> ▶︎ </span>
             </button>
           </div>
         </div>
@@ -819,7 +818,7 @@ watch([currentWeekStart, groupBy], () => { load() })
   padding: .36rem .55rem;
   color: rgb(25, 40, 209);
   border: 1px solid var(--border);
-  background: var(--btn-blue-bg);      /* was var(--panel) */
+  background: var(--btn-blue-bg);
   border-radius: 10px;
   cursor: pointer;
 }
@@ -830,7 +829,7 @@ watch([currentWeekStart, groupBy], () => { load() })
   padding: .36rem .55rem;
   color: rgb(25, 40, 209);
   border: 1px solid var(--border);
-  background: var(--btn-blue-bg);      /* was var(--panel) */
+  background: var(--btn-blue-bg);
   border-radius: 10px;
   cursor: pointer;
 }
@@ -856,10 +855,10 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 /* Scroller remains for very small viewports, but 7 cols fit at typical widths */
 .board__scroller { overflow: auto; padding-bottom: 8px; }
 .grid {
-  --rowhead-w: 160px;            /* compact row header */
+  --rowhead-w: 160px;
   display: grid;
-  grid-template-columns: var(--rowhead-w) repeat(7, 1fr); /* always fits container width */
-  gap: 8px;                      /* tighter gaps */
+  grid-template-columns: var(--rowhead-w) repeat(7, 1fr);
+  gap: 8px;
   align-items: start;
   padding: 8px 0;
 }
@@ -867,7 +866,7 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  min-height: 100px;             /* slightly shorter cells */
+  min-height: 100px;
   position: relative;
 }
 .cell--head { background: transparent; border: none; min-height: auto; }
@@ -879,14 +878,14 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 .lanehead__right { display: flex; align-items: center; gap: 6px; }
 .lanehead__desc { color: var(--muted); font-size: .85rem; padding: 0 8px 8px; }
 /* Prevent rowhead contents from bleeding into the first day column */
-.cell--rowhead { overflow: hidden; }                /* clip to the rowhead cell */
-.lanehead { gap: 8px; }                             /* breathing room */
-.lanehead__title { min-width: 0; }                  /* allow flex child to shrink */
+.cell--rowhead { overflow: hidden; }
+.lanehead { gap: 8px; }
+.lanehead__title { min-width: 0; }
 .lanehead__title strong {
   display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.lanehead__desc { overflow-wrap: anywhere; word-break: break-word; }  /* safe wrapping */
-.lanehead__right { flex-shrink: 0; }                /* keep the … button inside the cell */
+.lanehead__desc { overflow-wrap: anywhere; word-break: break-word; }
+.lanehead__right { flex-shrink: 0; }
 
 .badge { font-size: .72rem; padding: .1rem .45rem; border-radius: 999px; border: 1px solid var(--border); }
 .badge.p-low { background: #eef6ff; color: #1e3a8a; }
@@ -953,7 +952,7 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 .projcard__body { display: none; }
 .projcard__body .desc{ color:var(--muted); margin:0; }
 .projcard__body .desc.clamped{
-  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+  display:-webkit-box; -webkit-box-orient:vertical; overflow:hidden;
 }
 .projcard__foot{ display:flex; justify-content:flex-end; gap:.35rem; }
 .projcard .link.more{
@@ -973,7 +972,10 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 .simple { display: grid; gap: 16px; margin-top: 12px; }
 
 /* Day chips */
-.simple__days { display: flex; gap: 8px; flex-wrap: wrap; }
+.simple__days {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  position: sticky; top: 64px; z-index: 2;
+}
 .simple__daybtn {
   display: inline-flex; align-items: baseline; gap: 6px;
   border: 1px solid var(--border);
@@ -986,40 +988,40 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 }
 .simple__daybtn.active { background: var(--btn-blue-bg); }
 
-/* Project lane as a card */
-.simple__lanes { display: grid; gap: 16px; }
+/* Projects/activities as columns */
+.simple__lanes {
+  display: grid;
+  grid-auto-flow: column;              /* lay lanes side-by-side as columns */
+  grid-auto-columns: minmax(260px, 1fr); /* each lane column width */
+  gap: 16px;
+  align-items: start;
+  overflow-x: auto;                    /* scroll horizontally if many lanes */
+  padding-bottom: 4px;
+}
 .simple__lane {
+  display: grid;
+  grid-template-rows: auto 1fr;  /* header + entries take remaining height */
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 14px;
   box-shadow: var(--shadow-sm);
+  min-height: 280px;
 }
 .simple__lanehead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .simple__lanehead .title { margin: 0; font-size: 1.05rem; }
 .simple__lanehead .right { display: inline-flex; gap: 6px; align-items: center; }
 .badge.hours { background: var(--btn-blue-bg); border: 1px solid var(--border); }
 
-
-/* Entries container: 4-column grid */
-.simple__entries { display: block; }
-
+/* Entries container: vertical stack within each lane column */
+.simple__entries { display: grid; grid-template-rows: 1fr; }
 .simple__droplist {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  grid-template-columns: 1fr;   /* single column of entry cards */
   align-items: start;
-}
-
-/* Responsive fallbacks */
-@media (max-width: 1200px) {
-  .simple__droplist { grid-template-columns: repeat(3, minmax(220px, 1fr)); }
-}
-@media (max-width: 900px) {
-  .simple__droplist { grid-template-columns: repeat(2, minmax(200px, 1fr)); }
-}
-@media (max-width: 560px) {
-  .simple__droplist { grid-template-columns: 1fr; }
+  overflow-y: auto;
+  max-height: 60vh;              /* keep columns tidy; adjust as needed */
 }
 
 /* Keep each TimeCard looking like a small card */
