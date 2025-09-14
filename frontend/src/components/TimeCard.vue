@@ -127,9 +127,18 @@ function onStop(){ emit('stop', props.card) }
       <div class="hours" v-if="durationHours > 0">{{ fmtH(durationHours, 2) }} h</div>
     </header>
 
-    <!-- Compact header (weekly grid cards) -->
-    <header v-else class="tcard__head tcard__head--compact">
+    <!-- Compact header (weekly/simple cards): show times + hours + edit -->
+    <header v-else class="tcard__head tcard__head--compact" @dblclick="editing = true">
+      <div class="times">
+        {{ new Date(card.start_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }}
+        →
+        <span v-if="!isRunning && card.end_utc">
+          {{ new Date(card.end_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }}
+        </span>
+        <span v-else>Now</span>
+      </div>
       <div class="hours-lg">{{ fmtH(durationHours, 2) }} h</div>
+      <button class="icon edit-compact" title="Edit" aria-label="Edit" @click.stop="editing = true">✎</button>
     </header>
 
     <!-- Compact weekly card: only a Details dropdown -->
@@ -171,10 +180,10 @@ function onStop(){ emit('stop', props.card) }
         </label>
         <div class="row">
           <label>Start
-            <input type="datetime-local" step="900", v-model="local.start_local" />
+            <input type="datetime-local" step="900" v-model="local.start_local" />
           </label>
           <label>End
-            <input type="datetime-local" step="900", v-model="local.end_local" />
+            <input type="datetime-local" step="900" v-model="local.end_local" />
           </label>
         </div>
       </div>
@@ -269,7 +278,14 @@ button.danger { border-color: #ef4444; color: #b91c1c; }
  .actions__icons { display: flex; gap: .35rem; }
 /* --- Compact variant for weekly grid --- */
 .tcard.compact { padding: .45rem .5rem; min-height: 48px; grid-template-rows: auto 1fr; }
-.tcard__head--compact { display:flex; align-items:center; justify-content:flex-start; }
+.tcard__head--compact {
+  display: grid;
+  grid-template-columns: 1fr auto auto; /* times | hours | edit */
+  align-items: center;
+  gap: .5rem;
+}
+.tcard__head--compact .times { font-size: .85rem; color: var(--text, #374151); font-weight: 600; }
+.tcard__head--compact .edit-compact { border-radius: 8px; padding: .2rem .4rem; }
 .hours-lg { font-weight: 800; font-size: .95rem; }
 .tcard.compact .handle,
 .tcard.compact .tcard__title,

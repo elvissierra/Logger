@@ -1,5 +1,3 @@
-
-
 <template>
   <section class="wrapper">
     <h1>Weekly Time Entries</h1>
