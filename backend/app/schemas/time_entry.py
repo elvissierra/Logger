@@ -6,7 +6,7 @@ class TimeEntryBase(BaseModel):
     project_code: str
     activity: str
     start_utc: datetime
-    end_utc: datetime
+    end_utc: Optional[datetime] = None
     notes: Optional[str] = None
 
 class TimeEntryCreate(TimeEntryBase):
@@ -20,16 +20,17 @@ class TimeEntryUpdate(BaseModel):
     notes: Optional[str] = None
 
 class TimeEntryOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
     id: str
     org_id: Optional[str] = None
     user_id: str
     project_code: str
-    activity: str
-    running: bool
+    activity: str | None = None
     start_utc: datetime
-    end_utc: datetime
-    seconds: int
+    end_utc: Optional[datetime] = None
+    seconds: Optional[int] = None
     notes: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    running: bool = False
+
+    model_config = ConfigDict(from_attributes=True)

@@ -1,9 +1,22 @@
 <script setup>
-import { ref, onErrorCaptured, computed } from 'vue'
+import { ref, onErrorCaptured, computed, onMounted } from 'vue'
 import TimeBoard from './components/TimeBoard.vue'
 // Optional debug/simple view: visit http://localhost:5173/?sheet=1
 // to render the lightweight TimeSheet page instead of the board
-import TimeSheet from '../TimeSheet.vue'
+import TimeSheet from './components/TimeSheet.vue'
+
+
+const ready = ref(false)
+onMounted(async () => {
+  try {
+    const r = await fetch((import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000') + '/api/auth/me', { credentials:'include' })
+    if (r.ok) {
+      const me = await r.json()
+      localStorage.setItem('logger.userId', me.id)
+    }
+  } catch {}
+  ready.value = true
+})
 
 const err = ref(null)
 onErrorCaptured((e) => { err.value = e; console.error(e); return false })

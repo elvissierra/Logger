@@ -1,4 +1,23 @@
 <script setup>
+/**
+ * Knowledge Drop — TimeCard.vue (single time entry)
+ *
+ * Purpose
+ * - Renders one time entry. Two modes: full card (Focus area) and compact card (Weekly/Simple lists).
+ * - Handles in-place editing with datetime-local fields rounded to 15‑minute increments.
+ *
+ * How it collaborates
+ * - Receives `runningId` & `nowTick` from the parent to compute live durations without its own timers.
+ * - Emits `save`, `delete`, `start`, `stop` so the parent can persist and manage global running state.
+ * - Uses a defensive clone of props for editing so we don’t mutate parent state directly.
+ *
+ * Why necessary
+ * - Centralizes entry UX (display + edit) so both layouts render identical semantics with different density.
+ *
+ * Notes
+ * - Duration is derived from start/end or from now when running; parent decides what “running” means.
+ * - We intentionally hide description/notes in compact mode to keep weekly cells small.
+ */
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 
 const clone = (obj) => {
@@ -65,14 +84,15 @@ function fmtH(n, d = 1) {
 onMounted(()=>window.addEventListener('keydown', onKey))
 onUnmounted(()=>window.removeEventListener('keydown', onKey))
 
-// ISO -> datetime-local (input value)
+// Convert ISO (UTC) -> value for <input type="datetime-local"> in the user’s local timezone (no seconds);
+// Important: subtract timezone offset so the local field shows the correct wall time.
 function toLocalInput(iso) {
   if (!iso) return ''
   const d = new Date(iso)
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
   return d.toISOString().slice(0, 16) // YYYY-MM-DDTHH:mm
 }
-// datetime-local -> ISO (UTC)
+// Convert local datetime string -> ISO (UTC), rounding to nearest 15 minutes to match the app’s granularity.
 function fromLocalInput(localStr) {
   if (!localStr) return ''
   const d = new Date(localStr) // local time
@@ -81,6 +101,7 @@ function fromLocalInput(localStr) {
   return new Date(roundedLocal.getTime() - roundedLocal.getTimezoneOffset() * 60000).toISOString()
 }
 
+// Live duration: when running, use nowTick; otherwise use end_utc (or 0 if missing).
 const durationHours = computed(() => {
   if (!props.card.start_utc) return 0
   const s = new Date(props.card.start_utc).getTime()
@@ -127,7 +148,7 @@ function onStop(){ emit('stop', props.card) }
       <div class="hours" v-if="durationHours > 0">{{ fmtH(durationHours, 2) }} h</div>
     </header>
 
-    <!-- Compact header (weekly/simple cards): show times + hours + edit -->
+    <!-- Compact header: show times + hours + quick edit; optimized for small weekly cells. -->
     <header v-else class="tcard__head tcard__head--compact" @dblclick="editing = true">
       <div class="times">
         {{ new Date(card.start_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }}
@@ -156,6 +177,7 @@ function onStop(){ emit('stop', props.card) }
       </div>
     </section>
 
+    <!-- Editor: fields map to API payload on save; step=900 enforces 15‑minute increments. -->
     <section v-else class="tcard__edit">
       <div class="grid">
         <label>Job Title
@@ -207,6 +229,7 @@ function onStop(){ emit('stop', props.card) }
 </template>
 
 <style scoped>
+/* Knowledge Drop — Card styles: full vs compact, hover states, and small in-card controls */
 .tcard {
   display: grid;
   grid-template-rows: auto 1fr auto; /* header | body grows | footer at bottom */
