@@ -9,15 +9,41 @@ from app.core.database import Base, engine
 from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware import Middleware
-from starlette.middleware.cors import CORSMiddleware as StarletteCORS  # alias not used but avoids confusion
+
 
 APP_NAME = os.getenv("APP_NAME", "Logger API")
 
-# CORS origins: comma-separated env var or default to Vite dev server
-_origins_env = os.getenv("BACKEND_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
-BACKEND_CORS_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()]
+
+# Accept CSV or JSON array for CORS origins
+_def_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+_env_origins = os.getenv("BACKEND_CORS_ORIGINS", "").strip()
+
+def _parse_origins(val: str):
+    if not val:
+        return []
+    val = val.strip()
+    if val.startswith("["):
+        try:
+            import json
+            arr = json.loads(val)
+            return [s.strip() for s in arr if isinstance(s, str) and s.strip()]
+        except Exception:
+            pass
+    return [o.strip() for o in val.split(",") if o.strip()]
+
+BACKEND_CORS_ORIGINS = _parse_origins(_env_origins) or _def_origins
+
 
 app = FastAPI(title=APP_NAME)
+
+# --- CORS must wrap all routes (place before routers & other middlewares) ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=BACKEND_CORS_ORIGINS,  # explicit list is required when credentials are used
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Enforce HTTPS and trusted hosts in production
 if os.getenv("FORCE_HTTPS", "0") == "1":
@@ -38,13 +64,6 @@ async def log_404s(request: Request, call_next):
         log.warning(f"[404] {request.method} {request.url.path} UA={ua} Ref={ref} Client={request.client}")
     return resp
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=BACKEND_CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Create tables in dev if using SQLite fallback (safe no-op for Postgres)
 @app.on_event("startup")

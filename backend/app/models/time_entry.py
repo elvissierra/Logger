@@ -14,9 +14,19 @@ class TimeEntry(Base):
     activity = Column(String, nullable=False)
 
     start_utc = Column(TIMESTAMP(timezone=True), nullable=False)
-    end_utc   = Column(TIMESTAMP(timezone=True), nullable=False)
+    # allow running entries to have no end yet; API computes/stores seconds when ended
+    end_utc   = Column(TIMESTAMP(timezone=True), nullable=True)
     seconds   = Column(Integer, nullable=False)  # computed in CRUD on create/update
 
     notes = Column(Text, nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Computed flags/metrics for API serializers (Pydantic from_attributes)
+    @property
+    def running(self) -> bool:
+        """True when the entry has a start but no end time yet."""
+        try:
+            return bool(self.start_utc) and (self.end_utc is None)
+        except Exception:
+            return False

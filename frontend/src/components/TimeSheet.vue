@@ -1,7 +1,8 @@
 <template>
   <section class="wrapper">
     <h1>Weekly Time Entries</h1>
-
+ 
+    <!-- Simple form posts raw fields to /api/time-entries/; use ISO UTC times (e.g., 2025-08-29T14:00:00Z). -->
     <form @submit.prevent="create">
       <fieldset>
         <legend>New Entry</legend>
@@ -47,9 +48,34 @@
 </template>
 
 <script setup>
+/**
+ * Knowledge Drop — TimeSheet.vue (API harness)
+ *
+ * Purpose
+ * - Minimal page to exercise the time-entries API without the full board UI.
+ * - Useful for debugging CORS/cookies and verifying CRUD quickly.
+ *
+ * How it ties in
+ * - Shares the same apiFetch refresh logic as the main app, so auth behavior matches the board.
+ * - Lets you create and delete entries with raw ISO strings (UTC) to confirm backend behavior.
+ */
 import { reactive, ref, onMounted } from 'vue'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000'
+
+
+async function apiFetch(url, opts = {}) {
+  const req = () => fetch(url, { credentials: 'include', ...opts })
+  let res = await req()
+  if (res.status === 401) {
+    try {
+      const r = await fetch(`${API_BASE}/api/auth/refresh`, { method: 'POST', credentials: 'include' })
+      if (r.ok) res = await req()
+    } catch {}
+  }
+  return res
+}
+
 const entries = ref([])
 const form = reactive({
   project_code: 'PJ-001',
@@ -60,13 +86,12 @@ const form = reactive({
 })
 
 async function load () {
-  const res = await fetch(`${API_BASE}/api/time-entries/`, { credentials: 'include' })
+  const res = await apiFetch(`${API_BASE}/api/time-entries/`)
   entries.value = await res.json()
 }
 async function create () {
-  const res = await fetch(`${API_BASE}/api/time-entries/`, {
+  const res = await apiFetch(`${API_BASE}/api/time-entries/`, {
     method: 'POST',
-    credentials: 'include',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)?.[1] || '') },
     body: JSON.stringify({
     project_code: form.project_code,
@@ -74,7 +99,7 @@ async function create () {
     start_utc: form.start_utc,
     end_utc: form.end_utc,
     notes: form.notes
-  })
+    })
   })
   if (!res.ok) {
     const msg = await res.text()
@@ -85,7 +110,7 @@ async function create () {
   await load()
 }
 async function remove (id) {
-  const res = await fetch(`${API_BASE}/api/time-entries/${id}`, { method: 'DELETE', credentials: 'include', headers: { 'X-CSRF-Token': (document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)?.[1] || '') } })
+  const res = await apiFetch(`${API_BASE}/api/time-entries/${id}`, { method: 'DELETE', headers: { 'X-CSRF-Token': (document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)?.[1] || '') } })
   if (!res.ok) {
     alert('Failed to delete')
     return
@@ -96,6 +121,7 @@ onMounted(load)
 </script>
 
 <style scoped>
+/* Knowledge Drop — Basic layout styles for the harness; not used by the main board. */
 .wrapper { max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
 form fieldset { display: grid; gap: .5rem; border: 1px solid #ddd; padding: 1rem; }
 label { display: grid; gap: .25rem; }

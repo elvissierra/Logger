@@ -1,9 +1,35 @@
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue'
+/**
+ * Knowledge Drop — TimeBoard.vue (primary UI)
+ *
+ * Overall purpose
+ * - This is the main authenticated UI for tracking time. It fetches a week's worth of entries,
+ *   groups them into swimlanes (by project or activity), and renders two layouts:
+ *   (1) Board/Grid with a weekly matrix and a Today focus area, (2) Simple layout with per-day columns.
+ *
+ * How pieces work together
+ * - Auth: We call /api/auth/me to get the user and store the id in localStorage for per-user client keys.
+ * - API access: apiFetch() wraps fetch with credentials and silent refresh on 401 via /api/auth/refresh.
+ * - Timers: startTimer()/stopTimer() create/extend entries; runningId is persisted per-user in localStorage.
+ * - Mapping: assignCardsToGrid() places entries into lanes and day columns; drag & drop updates times and grouping.
+ * - State: groupBy controls columns vs swimlanes; layoutMode toggles between grid and simple presentations.
+ * - Local-only meta: lane descriptions & priority live in localStorage (no backend schema required yet).
+ *
+ * Why necessary
+ * - Keeps the UX responsive (local reorder, meta, and layout state) while persisting the source of truth on the server.
+ * - Encapsulates week navigation and aggregation logic so cards can be rendered consistently across layouts.
+ *
+ * Notes
+ * - All date math is in local time for UI; we convert to UTC ISO when persisting (composeISOFromLaneAndTime).
+ * - 15‑minute rounding is applied for user inputs and when moving cards across days.
+ * - Be careful when changing storage keys (they include group/week so per-cell order persists correctly).
+ */
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import draggable from 'vuedraggable'
 import TimeCard from './TimeCard.vue'
-import { onUnmounted } from 'vue'
 
+
+// Theme handling: sync <html data-theme> + localStorage so user’s choice persists across sessions
 // --- Global ticking for live timers ---
 // --- Theme (light/dark) toggle ---
 const theme = ref(localStorage.getItem('logger.theme') || 'light')
@@ -12,6 +38,7 @@ watch(theme, (t) => {
   localStorage.setItem('logger.theme', t)
 }, { immediate: true })
 function toggleTheme(){ theme.value = theme.value === 'dark' ? 'light' : 'dark' }
+// Live ticking: shared clock for cards to recompute durations for running timers without per-card intervals
 const nowTick = ref(Date.now())
 let _nowHandle = null
 onMounted(() => {
@@ -19,9 +46,18 @@ onMounted(() => {
 })
 onUnmounted(() => { if (_nowHandle) clearInterval(_nowHandle) })
 
+// Backend base URL (Vite .env overrides). All API requests include credentials (cookies) and CSRF when needed.
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000'
-const userId = localStorage.getItem('logger.userId') || 'user-123' // TODO: wire real auth later
-function setUserId(id){ localStorage.setItem('logger.userId', id) }
+// Return the currently-authenticated user's id (or null if not signed in)
+function currentUserId () {
+  return localStorage.getItem('logger.userId') || null
+}
+function runningKey () {
+  const uid = currentUserId()
+  return uid ? `logger.runningEntry:${uid}` : null
+}
+const _rk = runningKey()
+const runningId = ref(_rk ? localStorage.getItem(_rk) : null)
 const TARGET_WEEKLY_HOURS = 40
 
 function getCsrf(){
@@ -29,22 +65,102 @@ function getCsrf(){
   return m ? decodeURIComponent(m[1]) : ''
 }
 
+function setUserId(id){ localStorage.setItem('logger.userId', id) }
+
+// fetch wrapper: adds credentials; on 401 it tries POST /api/auth/refresh, then retries the original request
+// Reasoning: avoids forcing the user to re-login when access token expires; keeps code DRY for all API calls
+// --- fetch wrapper with silent refresh on 401 ---
+async function apiFetch(url, opts = {}) {
+  const req = () => fetch(url, { credentials: 'include', ...opts })
+  let res = await req()
+  if (res.status === 401) {
+    try {
+      const r = await fetch(`${API_BASE}/api/auth/refresh`, { method: 'POST', credentials: 'include' })
+      if (r.ok) res = await req()
+    } catch (_) {}
+  }
+  return res
+}
+
+// Auth state & flows: login/register/logout. After success we call checkMe() to capture the user and refresh the board.
+// --- Auth state ---
+const authedUser = ref(null)
+const authMode = ref('login') // 'login' | 'register'
+const authLoading = ref(false)
+const authErr = ref('')
+const loginEmail = ref('')
+const loginPwd = ref('')
+const regName = ref('')
+const regEmail = ref('')
+const regPwd = ref('')
+
+async function checkMe(){
+  try{
+    const r = await apiFetch(`${API_BASE}/api/auth/me`)
+    if (!r.ok) { authedUser.value = null; return }
+    const u = await r.json()
+    authedUser.value = u
+    if (u?.id) setUserId(u.id)
+  }catch{ authedUser.value = null }
+}
+
+async function doLogin(){
+  authErr.value=''; authLoading.value=true
+  try{
+    const r = await apiFetch(`${API_BASE}/api/auth/login`, {
+      method:'POST', headers:{ 'Content-Type':'application/json', 'X-CSRF-Token': getCsrf() },
+      body: JSON.stringify({ email: loginEmail.value.trim(), password: loginPwd.value })
+    })
+    if(!r.ok) throw new Error(await r.text())
+    await checkMe()
+    if (authedUser.value) { notify('Signed in', 'success'); await load() }
+  }catch(e){ authErr.value = String(e?.message || e) }
+  finally{ authLoading.value=false }
+}
+
+async function doRegister(){
+  authErr.value=''; authLoading.value=true
+  try{
+    const r = await apiFetch(`${API_BASE}/api/auth/register`, {
+      method:'POST', headers:{ 'Content-Type':'application/json', 'X-CSRF-Token': getCsrf() },
+      body: JSON.stringify({ name: regName.value.trim() || undefined, email: regEmail.value.trim(), password: regPwd.value })
+    })
+    if(!r.ok) throw new Error(await r.text())
+    await checkMe()
+    if (authedUser.value) { notify('Account created', 'success'); await load() }
+  }catch(e){ authErr.value = String(e?.message || e) }
+  finally{ authLoading.value=false }
+}
+
+async function doLogout(){
+  try { await apiFetch(`${API_BASE}/api/auth/logout`, { method:'POST', headers:{ 'X-CSRF-Token': getCsrf() } }) } catch{}
+  const uid = localStorage.getItem('logger.userId') || ''
+  localStorage.removeItem('logger.userId')
+  if (uid) localStorage.removeItem(`logger.runningEntry:${uid}`)
+  authedUser.value = null
+  notify('Signed out','success')
+}
+
+watch(authedUser, (u) => { if (u) load() })
+
+
+// Per-user running timer pointer: saved under key logger.runningEntry:<userId> so multiple users on the same browser
+// don’t clash. We clear the key on stop or when navigating to a week where the entry is not present.
 // --- Running timer pointer (client-side) ---
-function runningKey () { return `logger.runningEntry:${userId}` }
-const runningId = ref(localStorage.getItem(runningKey()))
 function setRunningId (id) {
   runningId.value = id
-  if (id) localStorage.setItem(runningKey(), id)
-  else localStorage.removeItem(runningKey())
+  const rk = runningKey()
+  if (!rk) return
+  if (id) localStorage.setItem(rk, id)
+  else localStorage.removeItem(rk)
 }
 let _extendHandle = null
 async function stopRunningIfAny () {
   if (!runningId.value) return null
   const id = runningId.value
   try {
-    const res = await fetch(`${API_BASE}/api/time-entries/${id}`, {
+    const res = await apiFetch(`${API_BASE}/api/time-entries/${id}`, {
       method: 'PATCH',
-      credentials: 'include',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
       body: JSON.stringify({ end_utc: new Date().toISOString() })
     })
@@ -58,40 +174,38 @@ async function stopRunningIfAny () {
   await load()
   return id
 }
+// Start a timer: stop any existing one, create a new entry with start_utc=now and a provisional end_utc (+1min),
+// then extend end_utc every 30s while running. (This keeps duration visible even if the tab sleeps.)
 async function startTimer (seedCard) {
   await stopRunningIfAny()
   const now = new Date()
   const inOneMin = new Date(now.getTime() + 60 * 1000)
   const payload = {
-    user_id: userId,
+    // user_id: userId,
     project_code: seedCard.project_code || seedCard.projectCode || '',
     activity: seedCard.activity || '',
     start_utc: now.toISOString(),
     end_utc: inOneMin.toISOString(),
     notes: `[prio:${(seedCard.priority || 'Normal').toLowerCase()}]` + (seedCard.notes ? ` ${seedCard.notes}` : '')
   }
-  const res = await fetch(`${API_BASE}/api/time-entries/`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
-    body: JSON.stringify(payload)
-  })
-  if (!res.ok) {
-    return notify(`Failed to start timer: ${await res.text()}`, 'error')
-  }
-  const created = await res.json()
-  setRunningId(created.id)
-  // Periodically extend end_utc so duration grows while the tab is open
-  _extendHandle = setInterval(async () => {
-    try {
-      await fetch(`${API_BASE}/api/time-entries/${created.id}`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
-        body: JSON.stringify({ end_utc: new Date().toISOString() })
-      })
-    } catch {}
-  }, 30000)
+const res = await apiFetch(`${API_BASE}/api/time-entries/`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
+  body: JSON.stringify(payload)
+})
+// ...
+const created = await res.json()
+setRunningId(created.id)
+
+_extendHandle = setInterval(async () => {
+  try {
+    await apiFetch(`${API_BASE}/api/time-entries/${created.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
+      body: JSON.stringify({ end_utc: new Date().toISOString() })
+    })
+  } catch {}
+}, 30000)
   await load()
   notify('Timer started', 'success')
 }
@@ -121,11 +235,18 @@ async function startLaneTimer(lane) {
   await startTimer(seed)
 }
 
-onMounted(() => { load(); window.addEventListener('keydown', onKey) })
+onMounted(async () => {
+  await checkMe()
+  if (authedUser.value) {
+    load()
+    window.addEventListener('keydown', onKey)
+  }
+})
 onUnmounted(() => window.removeEventListener('keydown', onKey))
 
 
-const PRIORITIES = ['Low','Medium','High','Critical']
+// Lane metadata stored locally: description + priority per lane key. Useful before we add server-side project fields.
+const PRIORITIES = ['Low','Normal','High','Critical']
 
 function parsePriorityAndCleanNotes(notes) {
   if (!notes) return { priority: 'Normal', notes: '' }
@@ -157,6 +278,8 @@ function isDescLong(key){ return laneDesc(key).length > 120 }
 function isExpanded(key){ return !!expandedLanes.value[key] }
 function toggleMoreDesc(key){ expandedLanes.value[key] = !expandedLanes.value[key] }
 
+// All UI date math is done in local time to match user expectations; we convert to UTC ISO when persisting.
+// Utilities here normalize weeks (Mon-Sun), format labels, clamp to 15‑minute increments, and compute hours.
 // ---- Date helpers (local time) ----
 function pad(n) { return String(n).padStart(2, '0') }
 function startOfWeek(d = new Date()) {
@@ -222,6 +345,7 @@ function nextWeek() { currentWeekStart.value = addDays(currentWeekStart.value, 7
 function goToToday() { currentWeekStart.value = startOfWeek(new Date()) }
 
 // ---- Grouping (columns) ----
+// Grouping: controls how lanes are formed (projects vs activities). Changing this rebuilds the swimlanes.
 const GROUPS = [
   { value: 'project_code', label: 'Project' },
   { value: 'activity', label: 'Activity' },
@@ -229,6 +353,7 @@ const GROUPS = [
 const groupBy = ref('project_code')
 
 // --- Layout toggle (grid vs simple) ---
+// Layout toggle: 'grid' (weekly board) vs 'simple' (per-day columns). Persisted so users return to their last choice.
 const layoutMode = ref(localStorage.getItem('logger.layoutMode') || 'grid')
 watch(layoutMode, (m) => localStorage.setItem('logger.layoutMode', m))
 
@@ -305,6 +430,7 @@ function buildEmptySwimlane(key, title) {
   }
 }
 
+// Map raw API entries -> UI lanes/columns. Ensures all custom lanes exist and preserves per-cell order from storage.
 function assignCardsToGrid(entries) {
   const lanesMap = new Map()
   const ensureLane = (k, t) => {
@@ -336,13 +462,15 @@ swimlanes.value = ordered
 applyLocalOrder()
 }
 
+// Load the current week’s entries from the server. We request [Mon..Mon+7) and then map into the grid.
+// If an entry that was running disappears due to week navigation, clear the local running pointer.
 async function load() {
   loading.value = true; error.value = ''
   try {
     const monday = currentWeekStart.value
     const nextMonday = addDays(monday, 7)
     const qs = new URLSearchParams({ from: monday.toISOString(), to: nextMonday.toISOString() }).toString()
-    const res = await fetch(`${API_BASE}/api/time-entries/?${qs}`, { credentials: 'include' })
+    const res = await apiFetch(`${API_BASE}/api/time-entries/?${qs}`)
     if (!res.ok) throw new Error(await res.text())
     const data = await res.json()
     assignCardsToGrid(data)
@@ -406,9 +534,8 @@ async function saveCard(payload) {
   if (payload.id && String(payload.id).startsWith('tmp_')) payload.id = null
 
   if (payload.id) {
-    const res = await fetch(`${API_BASE}/api/time-entries/${payload.id}`, {
+    const res = await apiFetch(`${API_BASE}/api/time-entries/${payload.id}`, {
       method: 'PATCH',
-      credentials: 'include',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
       body: JSON.stringify({
         project_code: payload.project_code || payload.projectCode,
@@ -420,12 +547,11 @@ async function saveCard(payload) {
     })
     if (!res.ok) return notify(`Failed to update: ${await res.text()}`, 'error')
   } else {
-    const res = await fetch(`${API_BASE}/api/time-entries/`, {
+    const res = await apiFetch(`${API_BASE}/api/time-entries/`, {
       method: 'POST',
-      credentials: 'include',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
       body: JSON.stringify({
-        user_id: userId,
+        // user_id: userId,
         project_code: payload.project_code || payload.projectCode,
         activity: payload.activity,
         start_utc: payload.start_utc,
@@ -443,9 +569,8 @@ async function deleteCard(lane, col, card) {
     col.cards = col.cards.filter(c => c !== card)
     return
   }
-  const res = await fetch(`${API_BASE}/api/time-entries/${card.id}`, {
+  const res = await apiFetch(`${API_BASE}/api/time-entries/${card.id}`, {
     method: 'DELETE',
-    credentials: 'include',
     headers: { 'X-CSRF-Token': getCsrf() }
   })
   if (!res.ok) return notify(`Failed to delete: ${await res.text()}`, 'error')
@@ -473,6 +598,8 @@ function addCard(lane, col) {
 }
 
 // Handle drags across rows/columns
+// Drag & drop between days/lanes: recompute start/end ISO strings for the target day; update grouping fields;
+// persist to server when moving existing (non-temp) cards; store new order for this cell.
 function onCellChange(lane, col, evt) {
   if (evt?.added) {
     const card = evt.added.element
@@ -492,6 +619,7 @@ function onCellChange(lane, col, evt) {
 }
 
 // Totals
+// Aggregation helpers: per-day, per-lane, and per-cell hours. Used for badges and progress bar.
 function colHours(dayKey) {
   let sum = 0
   for (const lane of swimlanes.value) {
@@ -520,11 +648,22 @@ const showFocus = computed(() => !!todayKey.value && isSameDay(currentWeekStart.
 
 // Per-day plan note (local persistence for now; can be moved to backend later)
 const dailyPlan = ref('')
-function planKey(dayKey) { return `logger.dailyPlan:${userId}:${dayKey}` }
-watch(todayKey, (k) => { if (k) dailyPlan.value = localStorage.getItem(planKey(k)) || '' }, { immediate: true })
-watch(dailyPlan, (v) => { const k = todayKey.value; if (k != null) localStorage.setItem(planKey(k), v) })
+function planKey(dayKey) {
+  const uid = currentUserId()
+  return uid ? `logger.dailyPlan:${uid}:${dayKey}` : null
+}
+watch(todayKey, (k) => {
+  const key = k ? planKey(k) : null
+  dailyPlan.value = key ? (localStorage.getItem(key) || '') : ''
+}, { immediate: true })
+watch(dailyPlan, (v) => {
+  const k = todayKey.value
+  const key = k ? planKey(k) : null
+  if (key) localStorage.setItem(key, v)
+})
 
 // Aggregate today's cards across all swimlanes
+// Today focus: flattens each lane’s Today column for a larger editor area at the top of the page.
 const todayLanes = computed(() => {
   if (!todayKey.value) return []
   return swimlanes.value.map(lane => ({
@@ -539,7 +678,41 @@ watch([currentWeekStart, groupBy], () => { load() })
 </script>
 
 <template>
-  <section class="board">
+  <!-- Auth screen: simple email/password login/register forms. Cookies are set by the backend; we call checkMe() after. -->
+      <section v-if="!authedUser" class="auth">
+    <div class="auth__card">
+      <h2>{{ authMode==='login' ? 'Sign in' : 'Create account' }}</h2>
+      <form @submit.prevent="authMode==='login' ? doLogin() : doRegister()" class="auth__form">
+        <label v-if="authMode==='register'">Name
+          <input v-model="regName" />
+        </label>
+        <template v-if="authMode==='login'">
+          <label>Email
+            <input type="email" v-model="loginEmail" required autocomplete="username" />
+          </label>
+          <label>Password
+            <input type="password" v-model="loginPwd" required autocomplete="current-password" />
+          </label>
+        </template>
+        <template v-else>
+          <label>Email
+            <input type="email" v-model="regEmail" required autocomplete="username" />
+          </label>
+          <label>Password
+            <input type="password" v-model="regPwd" required autocomplete="new-password" />
+          </label>
+        </template>
+        <button :disabled="authLoading">{{ authLoading ? (authMode==='login' ? 'Signing in…' : 'Creating…') : (authMode==='login' ? 'Sign in' : 'Create account') }}</button>
+        <p v-if="authErr" class="error">{{ authErr }}</p>
+      </form>
+      <p class="hint">
+        <button class="link" @click="authMode = (authMode==='login' ? 'register' : 'login')">
+          {{ authMode==='login' ? 'No account? Create one' : 'Have an account? Sign in' }}
+        </button>
+      </p>
+    </div>
+  </section>
+  <section v-if="authedUser" class="board">
     <div class="toastbox">
       <div v-for="t in toasts" :key="t.id" class="toast" :class="t.type">{{ t.msg }}</div>
     </div>
@@ -574,8 +747,10 @@ watch([currentWeekStart, groupBy], () => { load() })
         <button type="button" @click="toggleTheme" :title="theme==='dark' ? 'Switch to Light' : 'Switch to Dark'">
           {{ theme==='dark' ? '☀︎' : '🌙' }}
         </button>
+        <button type="button" @click="doLogout">Logout</button>
       </div>
     </header>
+    <!-- Focus area (today): quick editing surface and lane-level actions like start/stop. -->
     <section v-if="layoutMode==='grid' && showFocus" class="focus focus--inboard">
       <header class="focus__header">
         <strong>Today — {{ todayLabel }}</strong>
@@ -649,6 +824,7 @@ watch([currentWeekStart, groupBy], () => { load() })
     <p v-if="loading">Loading…</p>
 
     <!-- Scroller keeps header row and columns aligned on all widths -->
+    <!-- Weekly Board/Grid: 7-day matrix with swimlanes on rows; entries rendered only when present in a cell. -->
     <div class="board__scroller" v-if="layoutMode==='grid'">
       <div class="grid">
         <!-- Header row -->
@@ -733,6 +909,7 @@ watch([currentWeekStart, groupBy], () => { load() })
       </div>
     </div>
     <!-- Simple layout: per-day stacks per project -->
+    <!-- Simple layout: projects/activities as columns; entries stacked vertically per selected day. -->
     <section v-if="layoutMode==='simple'" class="simple">
       <div class="simple__days">
         <button
@@ -807,6 +984,15 @@ watch([currentWeekStart, groupBy], () => { load() })
 </template>
 
 <style scoped>
+/*
+  Knowledge Drop — Styles in this file
+  - Board chrome: header/nav/toolbars and progress bar
+  - Grid layout: weekly matrix cells, row headers, drag/drop styling
+  - Focus (today) panel: expanded cards and plan textarea
+  - Simple layout: lane columns with stacked entries and CTA when empty
+  - Cards inside lists use :deep(.tcard) to tweak visuals without coupling to TimeCard internals
+  Notes: keep selectors narrow; prefer utility blocks over deep nesting; respect the global CSS vars in App.vue.
+*/
 .board { max-width: var(--container); margin: 0 auto; padding: 12px; }
 .board__header {
   display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px;
@@ -1042,4 +1228,13 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
   padding: .7rem .95rem; border-radius: 10px; cursor: pointer; box-shadow: var(--shadow-sm);
 }
 .simple__cta .arrow { font-size: 1.05rem; }
+/* --- Auth screen --- */
+.auth { max-width: 520px; margin: 2rem auto; padding: 1rem; }
+.auth__card { border: 1px solid var(--border); border-radius: 12px; padding: 1rem; background: var(--panel); box-shadow: var(--shadow-sm); }
+.auth__form { display: grid; gap: .6rem; margin-top: .5rem; }
+.auth__form label { display: grid; gap: .25rem; }
+.auth input { padding: .5rem .6rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.auth button { padding: .5rem .8rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.auth .hint { margin-top: .6rem; }
+.auth .link { background: transparent; border: none; color: var(--primary); cursor: pointer; padding: 0; }
 </style>

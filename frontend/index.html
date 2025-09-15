@@ -1,4 +1,15 @@
 <!doctype html>
+<!--
+  Knowledge Drop: Frontend entry point (Vite app)
+  • Purpose: Provides the single HTML shell Vite serves in dev and builds in prod.
+  • What happens here:
+    - <div id="app"></div> is the mount point for our Vue application (created in src/main.js).
+    - <script type="module" src="/src/main.js"></script> is the Vite entry module.
+    - Google Fonts preconnect + stylesheet improves font loading (Inter family).
+    - <meta name="theme-color"> sets the browser UI color on mobile.
+  • Why needed: SPA frameworks like Vue render into a single root element; all UI is hydrated client-side.
+  • Notes: Keep this file minimal; SEO is handled by the app and/or server if needed.
+-->
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
