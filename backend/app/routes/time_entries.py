@@ -1,3 +1,21 @@
+"""
+Knowledge Drop — app/routes/time_entries.py (Time Entry API)
+
+What this file does
+- FastAPI router exposing CRUD endpoints for time entries, with per-user scoping and CSRF protection.
+
+How it works with other resources
+- Depends on routes.auth._verify_and_get_user_from_access for authentication via access token cookie.
+- Uses app.core.security.require_csrf for state-changing requests.
+- Delegates persistence and business rules to app.crud.time_entries.
+
+Why it’s necessary
+- Keeps HTTP concerns (validation/status codes) separate from DB logic, and enforces multi-tenant isolation.
+
+Notes
+- The list endpoint always scopes to the authenticated user for privacy.
+- Overlap checks prevent accidental double-tracking.
+"""
 from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
@@ -21,11 +39,9 @@ from app.crud.time_entries import (
     has_overlap as crud_has_overlap,
 )
 
-router = APIRouter()
+router = APIRouter()  # Router is mounted under /api/time-entries in main.py
 
-# -----------------
-# API Routes
-# -----------------
+# GET / — list entries for current user with optional date window
 @router.get("/", response_model=List[TimeEntryOut])
 def api_list_entries(
     skip: int = Query(0, ge=0),
@@ -38,6 +54,7 @@ def api_list_entries(
     # Always scope to the authenticated user for privacy
     return crud_list_entries(db, skip=skip, limit=limit, user_id=user.id, date_from=date_from, date_to=date_to)
 
+# POST / — create entry (CSRF protected); ownership forced to current user
 @router.post("/", response_model=TimeEntryOut, status_code=status.HTTP_201_CREATED)
 def api_create_entry(payload: TimeEntryCreate, request: Request, db: Session = Depends(get_db), user=Depends(_verify_and_get_user_from_access)):
     require_csrf(request)
@@ -49,6 +66,7 @@ def api_create_entry(payload: TimeEntryCreate, request: Request, db: Session = D
     payload2 = TimeEntryCreate(**{**payload.dict(), "user_id": user.id})
     return crud_create_entry(db, payload2)
 
+# GET /{id} — fetch one; 404/403 enforced
 @router.get("/{entry_id}", response_model=TimeEntryOut)
 def api_get_entry(entry_id: str, db: Session = Depends(get_db), user=Depends(_verify_and_get_user_from_access)):
     entry = crud_get_entry(db, entry_id)
@@ -58,6 +76,7 @@ def api_get_entry(entry_id: str, db: Session = Depends(get_db), user=Depends(_ve
         raise HTTPException(status_code=403, detail="Forbidden")
     return entry
 
+# PATCH /{id} — partial update with overlap validation and CSRF
 @router.patch("/{entry_id}", response_model=TimeEntryOut)
 def api_update_entry(entry_id: str, payload: TimeEntryUpdate, request: Request, db: Session = Depends(get_db), user=Depends(_verify_and_get_user_from_access)):
     entry = crud_get_entry(db, entry_id)
@@ -75,6 +94,7 @@ def api_update_entry(entry_id: str, payload: TimeEntryUpdate, request: Request, 
         raise HTTPException(status_code=409, detail="Overlapping time entry for user")
     return crud_update_entry(db, entry, payload)
 
+# DELETE /{id} — remove entry; CSRF and ownership enforced
 @router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
 def api_delete_entry(entry_id: str, request: Request, db: Session = Depends(get_db), user=Depends(_verify_and_get_user_from_access)):
     entry = crud_get_entry(db, entry_id)

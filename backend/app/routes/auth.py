@@ -1,3 +1,21 @@
+"""
+Knowledge Drop — app/routes/auth.py (Auth API)
+
+What this file does
+- Registration, login, refresh, revoke-all, logout, and /me endpoints backed by cookie-based JWTs.
+
+How it works with other resources
+- Uses security helpers to hash/verify passwords, mint JWTs, and set/clear cookies.
+- Reads/writes user model fields for refresh rotation (hash+jti) and token versioning.
+
+Why it’s necessary
+- Provides a clean, browser-friendly auth flow that works with SPA fetch (credentials: 'include').
+
+Notes
+- /refresh rotates the refresh token on every call and stores only its hash.
+- /revoke_all bumps token_version to invalidate all existing tokens at once.
+- CSRF is enforced by state-changing endpoints in other routers, not here (optionally could add to logout).
+"""
 from fastapi import APIRouter, Depends, HTTPException, Response, Request, status
 from sqlalchemy.orm import Session
 from pydantic import EmailStr
@@ -20,6 +38,7 @@ def _user_by_email(db: Session, email: str) -> User | None:
 def _user_by_id(db: Session, user_id: str) -> User | None:
     return db.get(User, user_id)
 
+# Read access_token from cookies, validate/verify against user/token_version, and return the user or 401
 def _verify_and_get_user_from_access(request: Request, db: Session = Depends(get_db)) -> User:
     token = request.cookies.get("access_token")
     if not token:
@@ -36,6 +55,7 @@ def _verify_and_get_user_from_access(request: Request, db: Session = Depends(get
         raise HTTPException(status_code=401, detail="Token version mismatch (revoked)")
     return user
 
+# Create user, issue access/refresh cookies, store hashed refresh & jti; returns public user payload
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def register(payload: UserCreate, response: Response, db: Session = Depends(get_db)):
     exists = _user_by_email(db, payload.email)
@@ -53,6 +73,7 @@ def register(payload: UserCreate, response: Response, db: Session = Depends(get_
     set_auth_cookies(response, access, refresh, csrf)
     return user
 
+# Authenticate credentials; rotate refresh; set new cookies; returns public user payload
 @router.post("/login", response_model=UserOut)
 def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
     user = _user_by_email(db, str(payload.email))
@@ -67,6 +88,7 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
     set_auth_cookies(response, access, refresh, csrf)
     return user
 
+# Validate refresh token (type, jti, hash, version), rotate both tokens, set cookies; returns user
 @router.post("/refresh", response_model=UserOut)
 def refresh(response: Response, request: Request, db: Session = Depends(get_db)):
     token = request.cookies.get("refresh_token")
@@ -93,7 +115,8 @@ def refresh(response: Response, request: Request, db: Session = Depends(get_db))
     csrf = secrets.token_urlsafe(24)
     set_auth_cookies(response, access, refresh_new, csrf)
     return user
-# Endpoint to revoke all sessions by bumping the token version
+
+# Invalidate all outstanding tokens by bumping token_version; clears stored refresh state
 @router.post("/revoke_all")
 def revoke_all(response: Response, request: Request, db: Session = Depends(get_db)):
     user = _verify_and_get_user_from_access(request, db)
@@ -105,6 +128,7 @@ def revoke_all(response: Response, request: Request, db: Session = Depends(get_d
     clear_auth_cookies(response)
     return {"ok": True}
 
+# Clear cookies client-side and best-effort clear stored refresh state on the user
 @router.post("/logout")
 def logout(response: Response, request: Request, db: Session = Depends(get_db)):
     # optional: require CSRF for logout as well
@@ -121,6 +145,7 @@ def logout(response: Response, request: Request, db: Session = Depends(get_db)):
         db.add(access_user); db.commit()
     return {"ok": True}
 
+# Return the authenticated user derived from access token (401 if missing/invalid)
 @router.get("/me", response_model=UserOut)
 def me(request: Request, db: Session = Depends(get_db)):
     user = _verify_and_get_user_from_access(request, db)
