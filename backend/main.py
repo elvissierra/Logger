@@ -1,3 +1,19 @@
+"""
+Knowledge Drop — backend/main.py (FastAPI app factory and wiring)
+
+What this file does
+- Builds the FastAPI app, installs security/CORS middlewares, mounts routers, and exposes health endpoints.
+
+How it works with other resources
+- CORS allowlist is parsed from env; CORSMiddleware is installed before routers so all responses include headers.
+- On startup, creates tables when using SQLite for dev; on Postgres this is a safe no-op.
+
+Why it’s necessary
+- Single composition point for the API; keeps route modules small and focused.
+
+Notes
+- In production, set TRUSTED_HOSTS and FORCE_HTTPS to harden external traffic.
+"""
 import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,7 +30,7 @@ from starlette.middleware import Middleware
 APP_NAME = os.getenv("APP_NAME", "Logger API")
 
 
-# Accept CSV or JSON array for CORS origins
+# Parse BACKEND_CORS_ORIGINS from CSV or JSON array to a normalized list
 _def_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
 _env_origins = os.getenv("BACKEND_CORS_ORIGINS", "").strip()
 
@@ -34,6 +50,7 @@ def _parse_origins(val: str):
 BACKEND_CORS_ORIGINS = _parse_origins(_env_origins) or _def_origins
 
 
+# Instantiate the application; middlewares must be added immediately after this
 app = FastAPI(title=APP_NAME)
 
 # --- CORS must wrap all routes (place before routers & other middlewares) ---
@@ -55,6 +72,7 @@ if trusted_hosts:
 
 log = logging.getLogger("uvicorn.error")
 
+# Lightweight observability: log 404s under /api/* with user-agent/referer/client for debugging
 @app.middleware("http")
 async def log_404s(request: Request, call_next):
     resp = await call_next(request)
@@ -65,20 +83,23 @@ async def log_404s(request: Request, call_next):
     return resp
 
 
-# Create tables in dev if using SQLite fallback (safe no-op for Postgres)
+# Dev convenience: create tables for SQLite; Postgres ignores create_all if tables already exist
 @app.on_event("startup")
 def _startup():
     Base.metadata.create_all(bind=engine)
 
 log.info(f"[startup] {APP_NAME} booted; CORS={BACKEND_CORS_ORIGINS}")
-# Routers
+
+# Mount routers under /api/* paths
 app.include_router(time_entries_router, prefix="/api/time-entries", tags=["time-entries"])
 app.include_router(auth_router,         prefix="/api/auth",         tags=["auth"])
 
+# Small convenience endpoint for health checks
 @app.get("/healthz")
 def health_check():
     return {"status": "ok"}
 
+# Root hint with docs & health pointers
 @app.get("/", include_in_schema=False)
 def root():
     # Small landing hint

@@ -1,10 +1,16 @@
+"""
+# Knowledge Drop — Alembic env
+# - Provides target_metadata from app models so `alembic revision --autogenerate` can diff schemas.
+# - Supports both offline (SQL script) and online (live DB connection) migrations.
+# - Reads DATABASE_URL from env, with a fallback to app/.env for local dev convenience.
+"""
 from logging.config import fileConfig
 import os
 from app.models import user  # noqa: F401
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 
-# Lightweight fallback loader so Alembic can read app/.env when running from CLI
+# Minimal .env parser to avoid importing dotenv in the Alembic runtime; safe for local-only usage.
 def _fallback_database_url_from_dotenv() -> str | None:
     # Resolve .../app/migrations/env.py -> .../app/.env
     here = os.path.abspath(os.path.dirname(__file__))
@@ -37,7 +43,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Provide metadata to Alembic's autogenerate
+# Base metadata collected from imported models; Alembic uses this to autogenerate migrations.
 target_metadata = Base.metadata
 
 def get_url() -> str:
@@ -49,6 +55,7 @@ def get_url() -> str:
     url = _fallback_database_url_from_dotenv()
     if url:
         return url
+    # Fail fast so migrations don't run against SQLite or an unexpected default.
     raise RuntimeError("DATABASE_URL is not set")
 
 def run_migrations_offline():
@@ -60,6 +67,7 @@ def run_migrations_offline():
         dialect_opts={"paramstyle": "named"},
         compare_type=True,             # detect type changes
         compare_server_default=True,   # detect default changes
+        # compare_type/server_default lets Alembic detect column type/default changes across revisions.
     )
     with context.begin_transaction():
         context.run_migrations()

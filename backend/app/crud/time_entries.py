@@ -1,3 +1,17 @@
+"""
+Time entry CRUD (Knowledge Drop)
+
+What this file does
+- Implements listing, creation, update, delete, overlap detection, and duration computation for time entries.
+
+How it collaborates
+- Models: app.models.time_entry.TimeEntry
+- Schemas: app.schemas.time_entry.TimeEntryCreate/Update used by routes
+- Routes call these helpers with a Session from get_db().
+
+Why necessary
+- Keeps data rules (seconds recompute, overlap constraints) in one place so both API and background jobs are consistent.
+"""
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
@@ -15,9 +29,13 @@ def list_entries(
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
 ) -> List[TimeEntry]:
-    """List entries with optional filters.
-    If both date_from and date_to are provided, filter by start_utc in [date_from, date_to).
     """
+    List entries with optional filters.
+    - Filters by user when user_id is provided.
+    - If both date_from and date_to are provided, returns entries with start_utc in [date_from, date_to).
+    - Orders newest-first to support UIs that show recent work on top.
+    """
+    # Base query; subsequent filters are composed conditionally.
     q = db.query(TimeEntry)
     if user_id:
         q = q.filter(TimeEntry.user_id == user_id)
@@ -27,6 +45,7 @@ def list_entries(
         q = q.filter(TimeEntry.start_utc >= date_from)
     elif date_to:
         q = q.filter(TimeEntry.start_utc < date_to)
+    # Keep the query bounded; large ranges should be paginated (skip/limit).
     return (
         q.order_by(TimeEntry.start_utc.desc())
          .offset(skip)
@@ -40,6 +59,7 @@ def get_entry(db: Session, entry_id: str) -> Optional[TimeEntry]:
 
 
 def _compute_seconds(start_utc: datetime, end_utc: datetime) -> int:
+    """Pure function for duration; guards against negative intervals (clock skew / bad input)."""
     return max(0, int((end_utc - start_utc).total_seconds()))
 
 
@@ -51,8 +71,10 @@ def has_overlap(
     end_utc: datetime,
     exclude_id: Optional[str] = None,
 ) -> bool:
-    """True if another entry for the same user overlaps the given interval.
-    Overlap test: existing.end > start AND existing.start < end
+    """
+    True if another entry for the same user overlaps the given interval.
+    Overlap test: existing.end > start AND existing.start < end (half-open interval semantics).
+    Used to prevent double-booking when creating or updating entries.
     """
     q = db.query(TimeEntry).filter(TimeEntry.user_id == user_id)
     q = q.filter(TimeEntry.end_utc > start_utc, TimeEntry.start_utc < end_utc)
@@ -62,6 +84,7 @@ def has_overlap(
 
 
 def create_entry(db: Session, payload: TimeEntryCreate) -> TimeEntry:
+    """Create entry and materialize seconds at write time so reports can use the column without recompute."""
     seconds = _compute_seconds(payload.start_utc, payload.end_utc)
     obj = TimeEntry(
         org_id=None,
@@ -80,6 +103,7 @@ def create_entry(db: Session, payload: TimeEntryCreate) -> TimeEntry:
 
 
 def update_entry(db: Session, entry: TimeEntry, payload: TimeEntryUpdate) -> TimeEntry:
+    """Patch entry fields and recompute seconds when start/end change; persists and refreshes in one transaction."""
     data = payload.dict(exclude_unset=True)
     for k, v in data.items():
         setattr(entry, k, v)
