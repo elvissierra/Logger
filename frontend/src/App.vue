@@ -4,12 +4,12 @@ import TimeBoard from './components/TimeBoard.vue'
 // Optional debug/simple view: visit http://localhost:5173/?sheet=1
 // to render the lightweight TimeSheet page instead of the board
 import TimeSheet from './components/TimeSheet.vue'
-
+import { API_BASE, apiFetch } from './lib/api'
 
 const ready = ref(false)
 onMounted(async () => {
   try {
-    const r = await fetch((import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000') + '/api/auth/me', { credentials:'include' })
+    const r = await apiFetch(`${API_BASE}/api/auth/me`)
     if (r.ok) {
       const me = await r.json()
       localStorage.setItem('logger.userId', me.id)
