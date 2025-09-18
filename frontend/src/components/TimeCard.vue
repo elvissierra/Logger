@@ -18,7 +18,12 @@
  * - Duration is derived from start/end or from now when running; parent decides what “running” means.
  * - We intentionally hide description/notes in compact mode to keep weekly cells small.
  */
-import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
+
+import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
+
+function roundToQuarterHours(h) {
+  return Math.round((Number(h) || 0) / 0.25) * 0.25
+}
 
 const clone = (obj) => {
   try {
@@ -108,6 +113,15 @@ const durationHours = computed(() => {
   const e = isRunning.value ? (props.nowTick || Date.now()) : (props.card.end_utc ? new Date(props.card.end_utc).getTime() : s)
   return Math.max(0, (e - s) / 3600000)
 })
+const roundedDurationHours = computed(() => roundToQuarterHours(durationHours.value))
+
+// Compact editor: start with basic fields; allow expanding to advanced
+const showAdvanced = ref(false)
+const advFirst = ref(null)
+watch(editing, (on) => { if (on) showAdvanced.value = false })
+watch(showAdvanced, async (open) => {
+  if (open) await nextTick().then(() => { advFirst.value?.focus?.() })
+})
 
 function onSave() {
   const payload = {
@@ -132,24 +146,26 @@ function onStop(){ emit('stop', props.card) }
   <article
     class="tcard"
     :class="{ editing, compact }"
-    :style="compact
-      ? { minHeight: (heightPx || Math.max(48, Math.round(durationHours*28))) + 'px',
-          height:    (heightPx || Math.max(48, Math.round(durationHours*28))) + 'px' }
-      : {}"
+    :style="(compact && !editing)
+        ? { minHeight: ((heightPx || 56)) + 'px' }
+        : {}"
   >
     <!-- Full header (focus cards) -->
     <header v-if="!compact" class="tcard__head">
       <span class="handle" title="Drag to reorder" aria-label="Drag handle">☰</span>
       <div class="tcard__title">
         <span class="prio-dot" :class="('p-' + (card.priority || 'Normal').toLowerCase())" :title="card.priority || 'Normal'"></span>
-        <strong class="title">{{ card.jobTitle || card.projectCode || 'Untitled' }}</strong>
+        <strong class="title" :title="card.jobTitle || card.projectCode || 'Untitled'">
+          {{ card.jobTitle || card.projectCode || 'Untitled' }}
+        </strong>
         <span class="chip" v-if="card.activity">{{ card.activity }}</span>
       </div>
-      <div class="hours" v-if="durationHours > 0">{{ fmtH(durationHours, 2) }} h</div>
+      <div class="hours" v-if="roundedDurationHours > 0">{{ fmtH(roundedDurationHours, 2) }} h</div>
     </header>
 
     <!-- Compact header: show times + hours + quick edit; optimized for small weekly cells. -->
     <header v-else class="tcard__head tcard__head--compact" @dblclick="editing = true">
+      <span class="handle" title="Drag to reorder" aria-label="Drag handle">☰</span>
       <div class="times">
         {{ new Date(card.start_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }}
         →
@@ -158,28 +174,29 @@ function onStop(){ emit('stop', props.card) }
         </span>
         <span v-else>Now</span>
       </div>
-      <div class="hours-lg">{{ fmtH(durationHours, 2) }} h</div>
+      <div class="hours-lg">{{ fmtH(roundedDurationHours, 2) }} h</div>
       <button class="icon edit-compact" title="Edit" aria-label="Edit" @click.stop="editing = true">✎</button>
     </header>
 
-    <!-- Compact weekly card: only a Details dropdown -->
-    <section v-if="compact" class="tcard__body tcard__body--compact"></section>
+    <!-- Compact weekly card body (only when not editing) -->
+    <section v-if="compact && !editing" class="tcard__body tcard__body--compact"></section>
 
-    <!-- Full card (focus area) — description/notes intentionally hidden -->
-    <section v-else-if="!editing" class="tcard__body" @dblclick="editing = true">
+    <!-- Full card body (focus area) shown when not editing) -->
+    <section v-else-if="!compact && !editing" class="tcard__body" @dblclick="editing = true">
       <div class="meta" v-if="card.start_utc && card.end_utc">
         <span class="time">
           {{ new Date(card.start_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }} →
           {{ new Date(card.end_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }}
         </span>
         <span class="sep">•</span>
-        <span class="hours">{{ fmtH(durationHours, 2) }} h</span>
+        <span class="hours">{{ fmtH(roundedDurationHours, 2) }} h</span>
       </div>
     </section>
 
-    <!-- Editor: fields map to API payload on save; step=900 enforces 15‑minute increments. -->
-    <section v-else class="tcard__edit">
-      <div class="grid">
+    <!-- Editor (appears for both compact and full when editing=true). step=900 enforces 15‑minute increments. -->
+    <section v-else class="tcard__edit" :class="{ 'tcard__edit--compact': compact }">
+      <!-- BASIC FIELDS -->
+      <div class="grid grid--basic">
         <label>Job Title
           <input v-model="local.jobTitle" placeholder="Bridge Inspection" />
         </label>
@@ -189,6 +206,27 @@ function onStop(){ emit('stop', props.card) }
         <label>Activity
           <input v-model="local.activity" placeholder="Paperwork / Field Work / Travel" />
         </label>
+        <div class="row">
+          <label>Start
+            <input type="datetime-local" step="900" v-model="local.start_local" />
+          </label>
+          <label>End
+            <input type="datetime-local" step="900" v-model="local.end_local" />
+          </label>
+        </div>
+      </div>
+
+      <!-- TOGGLE -->
+      <button
+        type="button"
+        class="link more toggle-adv"
+        @click="showAdvanced = !showAdvanced"
+        :aria-expanded="String(showAdvanced)"
+      >
+        {{ showAdvanced ? 'Hide advanced ▲' : 'More fields ▸' }}
+      </button>
+      <!-- ADVANCED (dropdown-style) -->
+      <div v-show="showAdvanced" class="grid grid--advanced">
         <label>Urgency
           <select v-model="local.priority">
             <option v-for="p in ['Low','Normal','High','Critical']" :key="p" :value="p">{{ p }}</option>
@@ -200,15 +238,8 @@ function onStop(){ emit('stop', props.card) }
         <label>Notes
           <textarea v-model="local.notes" rows="2" placeholder="Optional notes"></textarea>
         </label>
-        <div class="row">
-          <label>Start
-            <input type="datetime-local" step="900" v-model="local.start_local" />
-          </label>
-          <label>End
-            <input type="datetime-local" step="900" v-model="local.end_local" />
-          </label>
-        </div>
       </div>
+
       <div class="actions">
         <button type="button" class="primary" @click="onSave">Save</button>
         <span class="hint">⌘/Ctrl+S</span>
@@ -242,7 +273,7 @@ function onStop(){ emit('stop', props.card) }
   box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,.06));
   transition: box-shadow .15s ease, transform .08s ease, border-color .2s ease, background .2s ease;
   overflow: hidden;
-  min-height: 132px; /* ensure room so footer doesn't crowd header */
+  min-height: 112px; /* ensure room so footer doesn't crowd header */
 }
 .tcard:hover { box-shadow: var(--shadow-md, 0 6px 16px rgba(0,0,0,.08)); border-color: color-mix(in srgb, var(--border, #e5e7eb) 70%, var(--primary, #5b8cff) 30%); }
 .tcard.editing { background: var(--panel, #7282c2); }
@@ -261,7 +292,7 @@ function onStop(){ emit('stop', props.card) }
 .tcard__title { gap: .45rem; }
 .tcard__title .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hours { font-weight: 600; opacity: .9; }
-
+.tcard.editing { overflow: visible; }
 /* color-only priority dot */
 .prio-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; border: 1px solid var(--border, #e5e7eb); }
 .prio-dot.p-low { background: #93c5fd; border-color: #93c5fd; }
@@ -284,12 +315,49 @@ function onStop(){ emit('stop', props.card) }
 .icon:hover { background: #e9eef7; }
 .hint{ align-self:center; color:var(--muted); font-size:.85rem; margin-left:.25rem; }
 
-.tcard__edit .grid { display: grid; gap: .5rem; }
-.tcard__edit label { display: grid; gap: .25rem; }
-.tcard__edit .row { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+.tcard__edit .grid { display: grid; gap: .35rem; }
+.tcard__edit label { display: grid; gap: .2rem; }
+.tcard__edit .row { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: .35rem; }
+
 input, textarea, button { font: inherit; color: var(--text, #111827); }
-input, textarea { padding: .5rem .6rem; border: 1px solid var(--border, #d1d5db); border-radius: 8px; background: var(--panel, #ffffff); }
-.actions { display: flex; gap: .5rem; justify-content: flex-end; }
+
+input, textarea {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: .4rem .5rem;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 8px;
+  background: var(--panel, #ffffff);
+}
+@media (max-width: 520px) {
+  .tcard__edit .row { grid-template-columns: 1fr; }
+}
+select { width: 100%; max-width: 100%; box-sizing: border-box; }
+
+input[type="datetime-local"] { line-height: 1.2; }
+
+input[type="datetime-local"] {
+  font-size: .9rem;
+  padding: .32rem .45rem;
+  white-space: nowrap;     /* keep on one line */
+  overflow: hidden;        /* hide overflow */
+  text-overflow: ellipsis; /* show … when too long */
+}
+/* WebKit/Blink: compact the inner datetime editor pieces */
+input[type="datetime-local"]::-webkit-datetime-edit { padding: 0; }
+input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper { display: flex; }
+input[type="datetime-local"]::-webkit-datetime-edit-year-field,
+input[type="datetime-local"]::-webkit-datetime-edit-month-field,
+input[type="datetime-local"]::-webkit-datetime-edit-day-field,
+input[type="datetime-local"]::-webkit-datetime-edit-hour-field,
+input[type="datetime-local"]::-webkit-datetime-edit-minute-field,
+input[type="datetime-local"]::-webkit-datetime-edit-ampm-field {
+  padding: 0 .15em;
+}
+input[type="datetime-local"]::-webkit-calendar-picker-indicator { padding: 0 .2rem; }
+input, textarea, select { font-variant-numeric: tabular-nums; }
+.actions { display: flex; gap: .4rem; justify-content: flex-end; }
 button {
   padding: .45rem .7rem; border: 1px solid var(--border, #d1d5db); border-radius: 8px; background: var(--panel-2, #f9fafb);
   cursor: pointer; transition: background .15s ease, border-color .15s ease, transform .06s ease;
@@ -300,12 +368,12 @@ button.primary { background: linear-gradient(180deg, var(--primary, #5b8cff), va
 button.danger { border-color: #ef4444; color: #b91c1c; }
  .actions__icons { display: flex; gap: .35rem; }
 /* --- Compact variant for weekly grid --- */
-.tcard.compact { padding: .45rem .5rem; min-height: 48px; grid-template-rows: auto 1fr; }
+.tcard.compact { padding: .45rem .5rem; min-height: 56px; grid-template-rows: auto 1fr; }
 .tcard__head--compact {
   display: grid;
-  grid-template-columns: 1fr auto auto; /* times | hours | edit */
+  grid-template-columns: auto 1fr auto auto; /* handle | times | hours | edit */
   align-items: center;
-  gap: .5rem;
+  gap: .35rem;
 }
 .tcard__head--compact .times { font-size: .85rem; color: var(--text, #374151); font-weight: 600; }
 .tcard__head--compact .edit-compact { border-radius: 8px; padding: .2rem .4rem; }
@@ -323,5 +391,19 @@ button.danger { border-color: #ef4444; color: #b91c1c; }
 
 /* legacy: hide any old text priority pill if present */
 .tcard .prio { display: none !important; }
+
+/* When a compact card is editing, stack Start/End vertically to avoid overflow */
+.tcard.compact.editing .tcard__edit .row { grid-template-columns: 1fr; }
+
+/* Slightly reduce padding while editing (compact) to gain horizontal room */
+.tcard.compact.editing { padding: .6rem .6rem; }
+
+/* Keep datetime inputs within bounds and a bit tighter in compact edit mode */
+.tcard.compact.editing input[type="datetime-local"] {
+  width: 100%;
+  max-width: 100%;
+  font-size: .88rem;
+  padding: .3rem .45rem;
+}
 
 </style>
