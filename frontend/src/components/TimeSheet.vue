@@ -60,21 +60,8 @@
  * - Lets you create and delete entries with raw ISO strings (UTC) to confirm backend behavior.
  */
 import { reactive, ref, onMounted } from 'vue'
+import { API_BASE, apiFetch, getCsrf } from '../lib/api'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000'
-
-
-async function apiFetch(url, opts = {}) {
-  const req = () => fetch(url, { credentials: 'include', ...opts })
-  let res = await req()
-  if (res.status === 401) {
-    try {
-      const r = await fetch(`${API_BASE}/api/auth/refresh`, { method: 'POST', credentials: 'include' })
-      if (r.ok) res = await req()
-    } catch {}
-  }
-  return res
-}
 
 const entries = ref([])
 const form = reactive({
@@ -92,7 +79,7 @@ async function load () {
 async function create () {
   const res = await apiFetch(`${API_BASE}/api/time-entries/`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)?.[1] || '') },
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
     body: JSON.stringify({
     project_code: form.project_code,
     activity: form.activity,
@@ -110,7 +97,7 @@ async function create () {
   await load()
 }
 async function remove (id) {
-  const res = await apiFetch(`${API_BASE}/api/time-entries/${id}`, { method: 'DELETE', headers: { 'X-CSRF-Token': (document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)?.[1] || '') } })
+  const res = await apiFetch(`${API_BASE}/api/time-entries/${id}`, { method: 'DELETE', headers: { 'X-CSRF-Token': getCsrf() } })
   if (!res.ok) {
     alert('Failed to delete')
     return

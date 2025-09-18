@@ -27,7 +27,13 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import draggable from 'vuedraggable'
 import TimeCard from './TimeCard.vue'
-
+import { API_BASE, apiFetch, getCsrf } from '../lib/api'
+import {
+  pad, startOfWeek, addDays, dateKey, labelFor,
+  timeHMFromISO, composeISOFromLaneAndTime, laneKeyFromISO,
+  hoursBetweenRounded, roundHMToQuarter, roundDateToQuarter,
+  fmtH, isSameDay
+} from '../lib/time'
 
 // Theme handling: sync <html data-theme> + localStorage so user’s choice persists across sessions
 // --- Global ticking for live timers ---
@@ -49,8 +55,6 @@ onMounted(() => {
 })
 onUnmounted(() => { if (_nowHandle) clearInterval(_nowHandle) })
 
-// Backend base URL (Vite .env overrides). All API requests include credentials (cookies) and CSRF when needed.
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000'
 // Return the currently-authenticated user's id (or null if not signed in)
 function currentUserId () {
   return localStorage.getItem('logger.userId') || null
@@ -62,28 +66,7 @@ function runningKey () {
 const _rk = runningKey()
 const runningId = ref(_rk ? localStorage.getItem(_rk) : null)
 const TARGET_WEEKLY_HOURS = 40
-
-function getCsrf(){
-  const m = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)
-  return m ? decodeURIComponent(m[1]) : ''
-}
-
 function setUserId(id){ localStorage.setItem('logger.userId', id) }
-
-// fetch wrapper: adds credentials; on 401 it tries POST /api/auth/refresh, then retries the original request
-// Reasoning: avoids forcing the user to re-login when access token expires; keeps code DRY for all API calls
-// --- fetch wrapper with silent refresh on 401 ---
-async function apiFetch(url, opts = {}) {
-  const req = () => fetch(url, { credentials: 'include', ...opts })
-  let res = await req()
-  if (res.status === 401) {
-    try {
-      const r = await fetch(`${API_BASE}/api/auth/refresh`, { method: 'POST', credentials: 'include' })
-      if (r.ok) res = await req()
-    } catch (_) {}
-  }
-  return res
-}
 
 // Auth state & flows: login/register/logout. After success we call checkMe() to capture the user and refresh the board.
 // --- Auth state ---
@@ -281,58 +264,6 @@ function isDescLong(key){ return laneDesc(key).length > 120 }
 function isExpanded(key){ return !!expandedLanes.value[key] }
 function toggleMoreDesc(key){ expandedLanes.value[key] = !expandedLanes.value[key] }
 
-// All UI date math is done in local time to match user expectations; we convert to UTC ISO when persisting.
-// Utilities here normalize weeks (Mon-Sun), format labels, clamp to 15‑minute increments, and compute hours.
-// ---- Date helpers (local time) ----
-function pad(n) { return String(n).padStart(2, '0') }
-function startOfWeek(d = new Date()) {
-  const day = d.getDay() || 7  // Sun=0 -> 7
-  const monday = new Date(d)
-  monday.setHours(0,0,0,0)
-  monday.setDate(d.getDate() - (day - 1))
-  return monday
-}
-function addDays(d, n) { const z = new Date(d); z.setDate(z.getDate() + n); return z }
-function dateKey(d) { return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}` }
-function labelFor(d) { return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) }
-function laneKeyFromISO(iso) { if (!iso) return null; return dateKey(new Date(iso)) }
-function timeHMFromISO(iso) { const d = new Date(iso); return `${pad(d.getHours())}:${pad(d.getMinutes())}` }
-function composeISOFromLaneAndTime(laneKey, hm) {
-  const local = new Date(`${laneKey}T${hm}`) // local time
-  return local.toISOString() // store UTC
-}
-function hoursBetween(isoA, isoB) {
-  if (!isoA || !isoB) return 0
-  const a = new Date(isoA).getTime()
-  const b = new Date(isoB).getTime()
-  return Math.max(0, (b - a) / 3600000)
-}
-function roundToQuarterHours(h) {
-  // Round to nearest 0.25h (15 minutes)
-  return Math.round((Number(h) || 0) / 0.25) * 0.25
-}
-function hoursBetweenRounded(isoA, isoB) {
-  return roundToQuarterHours(hoursBetween(isoA, isoB))
-}
-function roundHMToQuarter(hm) {
-  const parts = (hm || '00:00').split(':')
-  const h = parseInt(parts[0] || '0', 10)
-  const m = parseInt(parts[1] || '0', 10)
-  const total = h * 60 + m
-  const rounded = Math.round(total / 15) * 15
-  const rh = Math.floor(rounded / 60)
-  const rm = rounded % 60
-  return `${pad(rh)}:${pad(rm)}`
-}
-function roundDateToQuarter(d) {
-  const ms = 15 * 60 * 1000
-  return new Date(Math.round(d.getTime() / ms) * ms)
-}
-// Safe hours formatter to avoid undefined.toFixed crashes
-function fmtH(n, d = 1) {
-  const x = Number(n)
-  return Number.isFinite(x) ? x.toFixed(d) : (0).toFixed(d)
-}
 
 // ---- Week navigation ----
 const currentWeekStart = ref(startOfWeek(new Date()))
@@ -651,7 +582,6 @@ const weeklyPct = computed(() => Math.min(1, (TARGET_WEEKLY_HOURS ? (weeklyHours
 const todayLabel = computed(() => todayHeader.value ? todayHeader.value.label : '')
 
 // ---- Focus: enlarge the current day's column at the top ----
-const isSameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 const todayHeader = computed(() => headerDays.value.find(d => isSameDay(d.date, new Date())))
 const todayKey = computed(() => todayHeader.value?.key || null)
 const showFocus = computed(() => !!todayKey.value && isSameDay(currentWeekStart.value, startOfWeek(new Date())))
