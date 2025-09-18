@@ -32,7 +32,10 @@ import TimeCard from './TimeCard.vue'
 // Theme handling: sync <html data-theme> + localStorage so user’s choice persists across sessions
 // --- Global ticking for live timers ---
 // --- Theme (light/dark) toggle ---
-const theme = ref(localStorage.getItem('logger.theme') || 'light')
+const theme = ref(
+  localStorage.getItem('logger.theme')
+  || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+)
 watch(theme, (t) => {
   document.documentElement.setAttribute('data-theme', t)
   localStorage.setItem('logger.theme', t)
@@ -303,6 +306,13 @@ function hoursBetween(isoA, isoB) {
   const a = new Date(isoA).getTime()
   const b = new Date(isoB).getTime()
   return Math.max(0, (b - a) / 3600000)
+}
+function roundToQuarterHours(h) {
+  // Round to nearest 0.25h (15 minutes)
+  return Math.round((Number(h) || 0) / 0.25) * 0.25
+}
+function hoursBetweenRounded(isoA, isoB) {
+  return roundToQuarterHours(hoursBetween(isoA, isoB))
 }
 function roundHMToQuarter(hm) {
   const parts = (hm || '00:00').split(':')
@@ -624,17 +634,17 @@ function colHours(dayKey) {
   let sum = 0
   for (const lane of swimlanes.value) {
     const col = lane.columns.find(c => c.dayKey === dayKey)
-    if (col) sum += col.cards.reduce((s, c) => s + hoursBetween(c.start_utc, c.end_utc), 0)
+    if (col) sum += col.cards.reduce((s, c) => s + hoursBetweenRounded(c.start_utc, c.end_utc), 0)
   }
   return sum
 }
 function laneHours(lane) {
-  return lane.columns.reduce((tot, c) => tot + c.cards.reduce((s, x) => s + hoursBetween(x.start_utc, x.end_utc), 0), 0)
+  return lane.columns.reduce((tot, c) => tot + c.cards.reduce((s, x) => s + hoursBetweenRounded(x.start_utc, x.end_utc), 0), 0)
 }
 function cellHours(lane, dayKey) {
   const col = lane.columns.find(c => c.dayKey === dayKey)
   if (!col) return 0
-  return col.cards.reduce((s, c) => s + hoursBetween(c.start_utc, c.end_utc), 0)
+  return col.cards.reduce((s, c) => s + hoursBetweenRounded(c.start_utc, c.end_utc), 0)
 }
 const weeklyHours = computed(() => headerDays.value.reduce((tot, d) => tot + colHours(d.key), 0))
 const weeklyPct = computed(() => Math.min(1, (TARGET_WEEKLY_HOURS ? (weeklyHours.value / TARGET_WEEKLY_HOURS) : 0)))
@@ -846,7 +856,7 @@ watch([currentWeekStart, groupBy], () => { load() })
                   :class="('p-' + (getLaneMeta(lane.key).priority || 'Normal').toLowerCase())"
                   :title="getLaneMeta(lane.key).priority || 'Normal'">
                 </span>
-                <h4 class="title">{{ lane.title }}</h4>
+                <h4 class="title" :title="lane.title">{{ lane.title }}</h4>
                 <span class="hours">{{ fmtH(laneHours(lane), 2) }} h</span>
               </header>
             
@@ -888,6 +898,7 @@ watch([currentWeekStart, groupBy], () => { load() })
               <draggable v-if="col.cards.length" v-model="col.cards"
                 item-key="id"
                 :animation="160"
+                handle=".handle"
                 class="droplist"
                 :group="{ name: 'cards', pull: true, put: true }"
                 ghost-class="drag-ghost"
@@ -931,7 +942,7 @@ watch([currentWeekStart, groupBy], () => { load() })
               <!-- Single toggle: Start new entry (also stops previous) / Stop running entry -->
               <button class="mini icon"
                       @click="isLaneRunning(lane) ? stopTimer() : startLaneTimer(lane)"
-                      :title="isLaneRunning(lane) ? 'Stop' : 'Start new entry'">
+                      :title="isLaneRunning(lane) ? 'Stop' : 'Start a new entry'">
                 {{ isLaneRunning(lane) ? '■' : '▶︎' }}
               </button>
             </div>
@@ -943,6 +954,7 @@ watch([currentWeekStart, groupBy], () => { load() })
               v-model="colFor(lane, selectedDayKey).cards"
               item-key="id"
               :animation="160"
+              handle=".handle"
               class="simple__droplist"
               :group="{ name: 'cards', pull: true, put: true }"
               ghost-class="drag-ghost"
@@ -966,16 +978,6 @@ watch([currentWeekStart, groupBy], () => { load() })
               </template>
             </draggable>
 
-            <!-- CTA when no entries yet -->
-            <button
-              v-else
-              class="simple__cta"
-              @click="startLaneTimer(lane)"
-              title="Start a new entry"
-            >
-              <span>Start a new entry</span>
-              <span class="arrow"> ▶︎ </span>
-            </button>
           </div>
         </div>
       </div>
@@ -1219,15 +1221,6 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
   min-height: 64px;
 }
 
-/* CTA when there are no entries — make it a card too */
-.simple__cta {
-  display: inline-flex; justify-content: space-between; align-items: center; gap: 10px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: .7rem .95rem; border-radius: 10px; cursor: pointer; box-shadow: var(--shadow-sm);
-}
-.simple__cta .arrow { font-size: 1.05rem; }
 /* --- Auth screen --- */
 .auth { max-width: 520px; margin: 2rem auto; padding: 1rem; }
 .auth__card { border: 1px solid var(--border); border-radius: 12px; padding: 1rem; background: var(--panel); box-shadow: var(--shadow-sm); }
