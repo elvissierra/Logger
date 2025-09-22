@@ -38,22 +38,22 @@ const showSheet = computed(() => new URLSearchParams(location.search).get('sheet
 
 <style scoped>
 :global(:root) {
-  /* Light, high-contrast palette */
-  --bg: #f6f7fb;
+  /* Light, softer palette */
+  --bg: #f7f9f8;
   --panel: #ffffff;
-  --panel-2: #f3f4f6;
-  --text: #0f172a;     /* slate-900 */
-  --muted: #475569;    /* slate-600 */
-  --border: #95b4db;   /* slate-200 */
-  --primary: #2563eb;  /* blue-600 */
-  --primary-600: #1d4ed8;
-  --accent: #06b6d4;   /* cyan-500 */
+  --panel-2: #f2f5f4;
+  --text: #0c1b1b;      /* deep teal-gray */
+  --muted: #5c6b6b;     /* desaturated slate/teal */
+  --border: #c7d8d5;    /* soft cool gray-green */
+  --primary: #2f8f83;   /* teal 600 */
+  --primary-600: #2a7c73;
+  --accent: #86d2c1;    /* mint accent */
   --radius: 12px;
   --shadow-sm: 0 1px 2px rgba(16,24,40,.06);
   --shadow-md: 0 8px 24px rgba(16,24,40,.08);
   --container: 1280px; /* app max width */
-  --btn-blue-bg: #eaf2ff;
-  --btn-blue-bg-hover: #dbe7ff;
+  --btn-blue-bg: #e8f3f0;         /* soft minty button bg */
+  --btn-blue-bg-hover: #dbeae6;   /* hover state */
 }
 :global(html, body, #app) { height: 100%; }
 :global(body) {
@@ -63,10 +63,18 @@ const showSheet = computed(() => new URLSearchParams(location.search).get('sheet
 }
 :global(#app) { min-height: 100dvh; }
 :global(:root[data-theme="dark"]) {
-  --bg:#0b1220; --panel:#0f172a; --panel-2:#111827;
-  --text:#e5e7eb; --muted:#94a3b8; --border:#243b5a;
-  --primary:#60a5fa; --primary-600:#3b82f6; --accent:#22d3ee;
-  --btn-blue-bg:#13223f; --btn-blue-bg-hover:#0f1b33;
+  /* Dark, low-strain palette */
+  --bg:#0e1414;       /* very dark teal-gray */
+  --panel:#121a1a;    /* card background */
+  --panel-2:#0f1717;  /* subtle panel */
+  --text:#e6f2f0;     /* soft near-white */
+  --muted:#9db5b1;    /* muted labels */
+  --border:#20302f;   /* cool border */
+  --primary:#7fd1c3;  /* soft teal */
+  --primary-600:#63b5a8;
+  --accent:#b9eadf;   /* pale mint */
+  --btn-blue-bg:#16211f;        /* button surface */
+  --btn-blue-bg-hover:#101917;  /* hover */
 }
 
 .fatal { padding:16px; color:#991b1b; background:#fee2e2; border:1px solid #fecaca; border-radius: 10px; margin:16px; }

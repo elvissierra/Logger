@@ -35,6 +35,24 @@ import {
   fmtH, isSameDay
 } from '../lib/time'
 
+// --- Projects (authoritative created_at for lane visibility) ---
+const projects = ref([]) // [{ code, created_at, ... }]
+const projectMap = computed(() => Object.fromEntries(projects.value.map(p => [p.code, p])))
+
+async function loadProjects() {
+  try {
+    const r = await apiFetch(`${API_BASE}/api/projects/`)
+    if (r.ok) projects.value = await r.json()
+  } catch {}
+}
+
+function laneVisibleOnDayByProjects(laneKey, dayKey) {
+  const p = projectMap.value[laneKey]
+  if (!p || !p.created_at) return true
+  const createdKey = dateKey(new Date(p.created_at))
+  return dayKey >= createdKey
+}
+
 // Theme handling: sync <html data-theme> + localStorage so user’s choice persists across sessions
 // --- Global ticking for live timers ---
 // --- Theme (light/dark) toggle ---
@@ -224,7 +242,8 @@ async function startLaneTimer(lane) {
 onMounted(async () => {
   await checkMe()
   if (authedUser.value) {
-    load()
+    await loadProjects()
+    await load()
     window.addEventListener('keydown', onKey)
   }
 })
@@ -503,6 +522,7 @@ async function saveCard(payload) {
     if (!res.ok) return notify(`Failed to create: ${await res.text()}`, 'error')
   }
   await load()
+  await loadProjects()
 }
 
 async function deleteCard(lane, col, card) {
@@ -516,6 +536,7 @@ async function deleteCard(lane, col, card) {
   })
   if (!res.ok) return notify(`Failed to delete: ${await res.text()}`, 'error')
   await load()
+  await loadProjects()
 }
 
 function addCard(lane, col) {
@@ -606,10 +627,12 @@ watch(dailyPlan, (v) => {
 // Today focus: flattens each lane’s Today column for a larger editor area at the top of the page.
 const todayLanes = computed(() => {
   if (!todayKey.value) return []
-  return swimlanes.value.map(lane => ({
-    lane,
-    col: lane.columns.find(c => c.dayKey === todayKey.value) || { dayKey: todayKey.value, cards: [] },
-  }))
+  return swimlanes.value
+    .filter(lane => laneVisibleOnDayByProjects(lane.key, todayKey.value))
+    .map(lane => ({
+      lane,
+      col: lane.columns.find(c => c.dayKey === todayKey.value) || { dayKey: todayKey.value, cards: [] },
+    }))
 })
 
 // Effects
@@ -728,8 +751,8 @@ watch([currentWeekStart, groupBy], () => { load() })
                         :title="isLaneRunning(pair.lane) ? 'Stop timer' : 'Start timer'">
                   {{ isLaneRunning(pair.lane) ? '■' : '▶︎' }}
                 </button>
-                <button class="mini icon" @click="editLaneMeta(pair.lane)" title="Edit project settings">⋯</button>
-                <button class="mini icon" @click="addCard(pair.lane, pair.col)" title="Add card">＋</button>
+              <button class="mini icon" @click="editLaneMeta(pair.lane)" title="Edit project settings">⋯</button>
+                <button v-if="laneVisibleOnDayByProjects(pair.lane.key, pair.col.dayKey)" class="mini icon" @click="addCard(pair.lane, pair.col)" title="Add card">＋</button>
               </div>
             </div>
             <div v-if="getLaneMeta(pair.lane.key).description" class="focus__lanedesc">
@@ -934,7 +957,7 @@ watch([currentWeekStart, groupBy], () => { load() })
 .nav { display: flex; align-items: center; gap: 6px; }
 .nav button {
   padding: .36rem .55rem;
-  color: rgb(25, 40, 209);
+  color: var(--primary);
   border: 1px solid var(--border);
   background: var(--btn-blue-bg);
   border-radius: 10px;
@@ -945,7 +968,7 @@ watch([currentWeekStart, groupBy], () => { load() })
 .toolbar { display: flex; align-items: center; gap: 12px; }
 .toolbar button {
   padding: .36rem .55rem;
-  color: rgb(25, 40, 209);
+  color: var(--primary);
   border: 1px solid var(--border);
   background: var(--btn-blue-bg);
   border-radius: 10px;
@@ -957,7 +980,7 @@ watch([currentWeekStart, groupBy], () => { load() })
   padding: .2rem .45rem;
   border: 1px solid var(--border);
   background: var(--btn-blue-bg);
-  color: rgb(25, 40, 209);
+  color: var(--primary);
   border-radius: 8px;
   cursor: pointer;
 }
@@ -1034,16 +1057,16 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 .focus--inboard { max-width: 100%; }
 .focus__header { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 14px; border-bottom: 1px solid var(--border); }
 .focus__hours { color: var(--muted); font-weight: 700; }
-.focus__layout { display: grid; grid-template-columns: 340px 1fr; gap: 16px; padding: 12px; }
+.focus__layout { position: relative; display: grid; align-items: start; grid-template-columns: 340px 1fr; gap: 16px; padding: 12px; }
 @media (max-width: 1100px) { .focus__layout { grid-template-columns: 1fr; } }
-.focus__plan { display: grid; gap: 8px; }
-.focus__label { font-weight: 700; color: var(--muted); }
+.focus__plan { display: grid; gap: 8px; position: sticky; top: 0; align-self: start; z-index: 0;}
+.focus__label { font-weight: 700; color: var(--muted); display: block; margin-bottom: .5rem;}
 .focus__textarea { width: 100%; min-height: 160px; resize: vertical; padding: .6rem .7rem; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); color: var(--text); }
 .focus__hint { color: var(--muted); }
-.focus__col { display: grid; gap: 12px; }
+.focus__col { display: grid; gap: 12px; position: relative; z-index: 1;}
 .focus__lane { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
 .focus__lanehead { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--border); font-weight: 700; }
-.focus__droplist { display: grid; gap: 10px; padding: 10px; max-height: none; }
+.focus__droplist { display: grid; gap: 10px; padding: 10px; max-height: none; position: relative; z-index: 1;}
 .focus :deep(.tcard) { box-shadow: var(--shadow-md); }
 
 .toastbox{ position:sticky; top:8px; z-index:20; display:grid; gap:6px; justify-items:end; }
@@ -1156,7 +1179,9 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 .auth__card { border: 1px solid var(--border); border-radius: 12px; padding: 1rem; background: var(--panel); box-shadow: var(--shadow-sm); }
 .auth__form { display: grid; gap: .6rem; margin-top: .5rem; }
 .auth__form label { display: grid; gap: .25rem; }
-.auth input { padding: .5rem .6rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.auth input { padding: .5rem .6rem; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); color: var(--text); }
+.auth input::placeholder { color: color-mix(in srgb, var(--muted) 70%, transparent); }
+.auth input:focus { outline: 2px solid color-mix(in srgb, var(--primary) 60%, transparent); }
 .auth button { padding: .5rem .8rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
 .auth .hint { margin-top: .6rem; }
 .auth .link { background: transparent; border: none; color: var(--primary); cursor: pointer; padding: 0; }

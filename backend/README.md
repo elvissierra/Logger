@@ -12,7 +12,7 @@ This service powers the time tracking app (Auth + Time Entries). It’s a FastAP
   - A readable `csrf_token` cookie is set for the SPA. For **POST/PATCH/DELETE**, the frontend must send
     `X-CSRF-Token: <csrf_token cookie>` (double‑submit defense).
 - **CORS**: Only origins listed in `BACKEND_CORS_ORIGINS` are allowed. You must include your frontend origin
-  (e.g. `http://localhost:5173`).
+  (e.g. `http://localhost:5173,http://127.0.0.1:5173`).
 - **Database**: SQLAlchemy engine from `DATABASE_URL`. **Postgres is the required database for production and deployments.**
   - Migrations via Alembic.
   - For experimentation or very quick local dev, you *may* use SQLite (see the example `.env`), but this is not intended for production use.
@@ -175,7 +175,7 @@ curl -i -X DELETE http://localhost:8000/api/time-entries/<id> \
 | Var | Required | Example | Notes |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | yes | `postgresql+psycopg://user:pass@localhost:5432/logger` | Or `sqlite:///./logger.db` for dev |
-| `BACKEND_CORS_ORIGINS` | yes | `http://localhost:5173` | Comma‑separated list |
+| `BACKEND_CORS_ORIGINS` | yes | `http://localhost:5173,http://127.0.0.1:5173` | Comma‑separated list |
 | `SECRET_KEY` | yes | `change-me` | Use a strong secret in prod |
 | `ACCESS_TOKEN_MIN` | no | `10` | Access token lifetime in minutes |
 | `REFRESH_TOKEN_DAYS` | no | `14` | Refresh token rotation window |
