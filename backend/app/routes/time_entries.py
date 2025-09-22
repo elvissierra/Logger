@@ -38,7 +38,8 @@ from app.crud.time_entries import (
     delete_entry as crud_delete_entry,
     has_overlap as crud_has_overlap,
 )
-
+from app.crud.projects import upsert_by_code
+from app.schemas.project import ProjectCreate
 router = APIRouter()  # Router is mounted under /api/time-entries in main.py
 
 # GET / — list entries for current user with optional date window
@@ -64,6 +65,12 @@ def api_create_entry(payload: TimeEntryCreate, request: Request, db: Session = D
         raise HTTPException(status_code=409, detail="Overlapping time entry for user")
     # Force server-side ownership to the authenticated user
     payload2 = TimeEntryCreate(**{**payload.dict(), "user_id": user.id})
+    # ensure project exists for this user
+    try:
+        upsert_by_code(db, user_id=user.id, payload=ProjectCreate(code=payload.project_code))
+    except Exception:
+        pass
+    return crud_create_entry(db, payload2)
     return crud_create_entry(db, payload2)
 
 # GET /{id} — fetch one; 404/403 enforced
@@ -92,6 +99,11 @@ def api_update_entry(entry_id: str, payload: TimeEntryUpdate, request: Request, 
         raise HTTPException(status_code=400, detail="end_utc must be greater than start_utc")
     if crud_has_overlap(db, user_id=entry.user_id, start_utc=new_start, end_utc=new_end, exclude_id=entry.id):
         raise HTTPException(status_code=409, detail="Overlapping time entry for user")
+    try:
+        if payload.project_code:
+            upsert_by_code(db, user_id=entry.user_id, payload=ProjectCreate(code=payload.project_code))
+    except Exception:
+        pass
     return crud_update_entry(db, entry, payload)
 
 # DELETE /{id} — remove entry; CSRF and ownership enforced
