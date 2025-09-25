@@ -7,11 +7,12 @@ services:
       dockerfile: backend/Dockerfile
     environment:
       - DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/logger
-      - BACKEND_CORS_ORIGINS=http://localhost:8080
+      - BACKEND_CORS_ORIGINS=http://localhost:8080,http://127.0.0.1:8080
       - SECRET_KEY=change-me-in-prod
       - ACCESS_TOKEN_MIN=10
       - REFRESH_TOKEN_DAYS=14
       - COOKIE_SECURE=0
+      - COOKIE_DOMAIN=localhost
       - TIMEZONE=America/Chicago
     ports:
       - "8000:8000"
