@@ -1,56 +1,44 @@
-version: "3.9"
+# ---- Backend Dockerfile (FastAPI + Uvicorn) ----
+FROM python:3.11-slim AS base
 
-services:
-  api:
-    build:
-      context:
-      dockerfile: backend/Dockerfile
-    environment:
-      - DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/logger
-      - BACKEND_CORS_ORIGINS=http://localhost:8080
-      - SECRET_KEY=change-me-in-prod
-      - ACCESS_TOKEN_MIN=10
-      - REFRESH_TOKEN_DAYS=14
-      - COOKIE_SECURE=0
-      - TIMEZONE=America/Chicago
-    ports:
-      - "8000:8000"
-    depends_on:
-      db:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/healthz || exit 1"]
-      interval: 10s
-      timeout: 3s
-      retries: 10
-      start_period: 10s
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: logger
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d logger"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
+# System deps for building wheels & psycopg (libpq)
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends build-essential libpq-dev curl \
+ && rm -rf /var/lib/apt/lists/*
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - "8080:80"
-    depends_on:
-      api:
-        condition: service_healthy
+WORKDIR /app
 
-volumes:
-  pgdata:
+# Install Python dependencies first (better layer caching)
+COPY backend/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Copy backend source
+COPY backend /app/backend
+
+# Make project importable
+ENV PYTHONPATH=/app/backend
+
+# Minimal entrypoint with optional Alembic migration
+RUN cat >/entrypoint.sh <<'EOF' \
+ && chmod +x /entrypoint.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd /app/backend
+
+# Run migrations if Alembic config exists
+if [ -f "/app/backend/alembic.ini" ]; then
+  echo "[entrypoint] Running alembic upgrade head..."
+  alembic upgrade head || echo "[entrypoint] Alembic skipped or failed (continuing)"
+fi
+
+echo "[entrypoint] Starting Uvicorn..."
+exec uvicorn main:app --host 0.0.0.0 --port 8000
+EOF
+
+EXPOSE 8000
+
+CMD ["/entrypoint.sh"]
