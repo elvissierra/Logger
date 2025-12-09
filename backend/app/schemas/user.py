@@ -13,19 +13,23 @@ Why it’s necessary
 Notes
 - `UserOut` intentionally omits sensitive fields like password_hash and refresh state.
 """
+
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, ConfigDict, Field
 from typing import Optional
+
 
 # Payload for /register; server handles email uniqueness and password hashing
 class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
 
+
 # Payload for /login
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
 
 # Public-facing user profile; from_attributes=True allows passing ORM instances directly
 class UserOut(BaseModel):

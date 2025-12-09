@@ -16,6 +16,7 @@ Notes
 - The list endpoint always scopes to the authenticated user for privacy.
 - Overlap checks prevent accidental double-tracking.
 """
+
 from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
@@ -40,42 +41,72 @@ from app.crud.time_entries import (
 )
 from app.crud.projects import upsert_by_code
 from app.schemas.project import ProjectCreate
+
 router = APIRouter()  # Router is mounted under /api/time-entries in main.py
+
 
 # GET / — list entries for current user with optional date window
 @router.get("/", response_model=List[TimeEntryOut])
 def api_list_entries(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
-    date_from: Optional[datetime] = Query(None, alias="from", description="UTC ISO start inclusive"),
-    date_to: Optional[datetime] = Query(None, alias="to", description="UTC ISO end exclusive"),
+    date_from: Optional[datetime] = Query(
+        None, alias="from", description="UTC ISO start inclusive"
+    ),
+    date_to: Optional[datetime] = Query(
+        None, alias="to", description="UTC ISO end exclusive"
+    ),
     db: Session = Depends(get_db),
     user=Depends(_verify_and_get_user_from_access),
 ):
     # Always scope to the authenticated user for privacy
-    return crud_list_entries(db, skip=skip, limit=limit, user_id=user.id, date_from=date_from, date_to=date_to)
+    return crud_list_entries(
+        db,
+        skip=skip,
+        limit=limit,
+        user_id=user.id,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
 
 # POST / — create entry (CSRF protected); ownership forced to current user
 @router.post("/", response_model=TimeEntryOut, status_code=status.HTTP_201_CREATED)
-def api_create_entry(payload: TimeEntryCreate, request: Request, db: Session = Depends(get_db), user=Depends(_verify_and_get_user_from_access)):
+def api_create_entry(
+    payload: TimeEntryCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(_verify_and_get_user_from_access),
+):
     require_csrf(request)
     if payload.end_utc <= payload.start_utc:
-        raise HTTPException(status_code=400, detail="end_utc must be greater than start_utc")
-    if crud_has_overlap(db, user_id=user.id, start_utc=payload.start_utc, end_utc=payload.end_utc):
+        raise HTTPException(
+            status_code=400, detail="end_utc must be greater than start_utc"
+        )
+    if crud_has_overlap(
+        db, user_id=user.id, start_utc=payload.start_utc, end_utc=payload.end_utc
+    ):
         raise HTTPException(status_code=409, detail="Overlapping time entry for user")
     # Force server-side ownership to the authenticated user
     payload2 = TimeEntryCreate(**{**payload.dict(), "user_id": user.id})
     # ensure project exists for this user
     try:
-        upsert_by_code(db, user_id=user.id, payload=ProjectCreate(code=payload.project_code))
+        upsert_by_code(
+            db, user_id=user.id, payload=ProjectCreate(code=payload.project_code)
+        )
     except Exception:
         pass
     return crud_create_entry(db, payload2)
     return crud_create_entry(db, payload2)
 
+
 # GET /{id} — fetch one; 404/403 enforced
 @router.get("/{entry_id}", response_model=TimeEntryOut)
-def api_get_entry(entry_id: str, db: Session = Depends(get_db), user=Depends(_verify_and_get_user_from_access)):
+def api_get_entry(
+    entry_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(_verify_and_get_user_from_access),
+):
     entry = crud_get_entry(db, entry_id)
     if not entry:
         raise HTTPException(status_code=404, detail="TimeEntry not found")
@@ -83,9 +114,16 @@ def api_get_entry(entry_id: str, db: Session = Depends(get_db), user=Depends(_ve
         raise HTTPException(status_code=403, detail="Forbidden")
     return entry
 
+
 # PATCH /{id} — partial update with overlap validation and CSRF
 @router.patch("/{entry_id}", response_model=TimeEntryOut)
-def api_update_entry(entry_id: str, payload: TimeEntryUpdate, request: Request, db: Session = Depends(get_db), user=Depends(_verify_and_get_user_from_access)):
+def api_update_entry(
+    entry_id: str,
+    payload: TimeEntryUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(_verify_and_get_user_from_access),
+):
     entry = crud_get_entry(db, entry_id)
     if not entry:
         raise HTTPException(status_code=404, detail="TimeEntry not found")
@@ -96,19 +134,37 @@ def api_update_entry(entry_id: str, payload: TimeEntryUpdate, request: Request, 
     new_start = payload.start_utc or entry.start_utc
     new_end = payload.end_utc or entry.end_utc
     if new_end <= new_start:
-        raise HTTPException(status_code=400, detail="end_utc must be greater than start_utc")
-    if crud_has_overlap(db, user_id=entry.user_id, start_utc=new_start, end_utc=new_end, exclude_id=entry.id):
+        raise HTTPException(
+            status_code=400, detail="end_utc must be greater than start_utc"
+        )
+    if crud_has_overlap(
+        db,
+        user_id=entry.user_id,
+        start_utc=new_start,
+        end_utc=new_end,
+        exclude_id=entry.id,
+    ):
         raise HTTPException(status_code=409, detail="Overlapping time entry for user")
     try:
         if payload.project_code:
-            upsert_by_code(db, user_id=entry.user_id, payload=ProjectCreate(code=payload.project_code))
+            upsert_by_code(
+                db,
+                user_id=entry.user_id,
+                payload=ProjectCreate(code=payload.project_code),
+            )
     except Exception:
         pass
     return crud_update_entry(db, entry, payload)
 
+
 # DELETE /{id} — remove entry; CSRF and ownership enforced
 @router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
-def api_delete_entry(entry_id: str, request: Request, db: Session = Depends(get_db), user=Depends(_verify_and_get_user_from_access)):
+def api_delete_entry(
+    entry_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(_verify_and_get_user_from_access),
+):
     entry = crud_get_entry(db, entry_id)
     if not entry:
         raise HTTPException(status_code=404, detail="TimeEntry not found")

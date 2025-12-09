@@ -16,6 +16,7 @@ Notes
 - pool_pre_ping=True avoids stale-connection errors after idle periods.
 - SQLite needs check_same_thread=False to allow use in FastAPI workers; Postgres does not.
 """
+
 import os
 from pathlib import Path
 from dotenv import load_dotenv, find_dotenv
@@ -31,7 +32,9 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL must be set (e.g. postgresql+psycopg://user:pass@host:5432/dbname)")
+    raise RuntimeError(
+        "DATABASE_URL must be set (e.g. postgresql+psycopg://user:pass@host:5432/dbname)"
+    )
 
 is_sqlite = DATABASE_URL.lower().startswith("sqlite")
 connect_args = {"check_same_thread": False} if is_sqlite else {}

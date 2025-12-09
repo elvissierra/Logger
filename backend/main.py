@@ -14,6 +14,7 @@ Why it’s necessary
 Notes
 - In production, set TRUSTED_HOSTS and FORCE_HTTPS to harden external traffic.
 """
+
 import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,6 +23,7 @@ from app.routes.time_entries import router as time_entries_router
 from app.routes.auth import router as auth_router
 from app.routes import projects as projects_routes
 from app.core.database import Base, engine
+
 # Strict security middleware for production hardening
 from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -35,6 +37,7 @@ APP_NAME = os.getenv("APP_NAME", "Logger API")
 _def_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
 _env_origins = os.getenv("BACKEND_CORS_ORIGINS", "").strip()
 
+
 def _parse_origins(val: str):
     if not val:
         return []
@@ -42,11 +45,13 @@ def _parse_origins(val: str):
     if val.startswith("["):
         try:
             import json
+
             arr = json.loads(val)
             return [s.strip() for s in arr if isinstance(s, str) and s.strip()]
         except Exception:
             pass
     return [o.strip() for o in val.split(",") if o.strip()]
+
 
 BACKEND_CORS_ORIGINS = _parse_origins(_env_origins) or _def_origins
 
@@ -73,6 +78,7 @@ if trusted_hosts:
 
 log = logging.getLogger("uvicorn.error")
 
+
 # Lightweight observability: log 404s under /api/* with user-agent/referer/client for debugging
 @app.middleware("http")
 async def log_404s(request: Request, call_next):
@@ -80,7 +86,9 @@ async def log_404s(request: Request, call_next):
     if request.url.path.startswith("/api/") and resp.status_code == 404:
         ua = request.headers.get("user-agent")
         ref = request.headers.get("referer")
-        log.warning(f"[404] {request.method} {request.url.path} UA={ua} Ref={ref} Client={request.client}")
+        log.warning(
+            f"[404] {request.method} {request.url.path} UA={ua} Ref={ref} Client={request.client}"
+        )
     return resp
 
 
@@ -89,17 +97,22 @@ async def log_404s(request: Request, call_next):
 def _startup():
     Base.metadata.create_all(bind=engine)
 
+
 log.info(f"[startup] {APP_NAME} booted; CORS={BACKEND_CORS_ORIGINS}")
 
 # Mount routers under /api/* paths
-app.include_router(time_entries_router, prefix="/api/time-entries", tags=["time-entries"])
-app.include_router(auth_router,         prefix="/api/auth",         tags=["auth"])
+app.include_router(
+    time_entries_router, prefix="/api/time-entries", tags=["time-entries"]
+)
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(projects_routes.router, prefix="/api/projects", tags=["projects"])
+
 
 # Small convenience endpoint for health checks
 @app.get("/healthz")
 def health_check():
     return {"status": "ok"}
+
 
 # Root hint with docs & health pointers
 @app.get("/", include_in_schema=False)
