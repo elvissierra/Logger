@@ -1,3 +1,4 @@
+
 <script setup>
 import { ref, onErrorCaptured, computed, onMounted } from 'vue'
 import TimeBoard from './components/TimeBoard.vue'
@@ -21,18 +22,71 @@ onMounted(async () => {
 const err = ref(null)
 onErrorCaptured((e) => { err.value = e; console.error(e); return false })
 
-const showSheet = computed(() => new URLSearchParams(location.search).get('sheet') === '1')
+const view = ref(
+  new URLSearchParams(location.search).get('sheet') === '1' ? 'sheet' : 'board'
+)
+const showSheet = computed(() => view.value === 'sheet')
+
+function setView (mode) {
+  view.value = mode === 'sheet' ? 'sheet' : 'board'
+  const url = new URL(window.location.href)
+  if (view.value === 'sheet') {
+    url.searchParams.set('sheet', '1')
+  } else {
+    url.searchParams.delete('sheet')
+  }
+  window.history.replaceState({}, '', url.toString())
+}
+
 </script>
 
+
 <template>
-  <div>
-    <div v-if="err" class="fatal">
-      <h1>UI error</h1>
-      <pre class="pre">{{ String(err && (err.message || err)) }}</pre>
-      <p>Check the browser console for stack traces.</p>
+  <div class="shell" v-if="ready">
+    <header class="shell__header">
+      <div class="shell__brand">
+        <div class="shell__logo" aria-hidden="true">⏱</div>
+        <div class="shell__titles">
+          <h1 class="shell__title">Logger</h1>
+          <p class="shell__subtitle">Plan your week, log your work, see your time clearly.</p>
+        </div>
+      </div>
+      <nav class="shell__nav" aria-label="View switch">
+        <button
+          type="button"
+          class="shell__navbtn"
+          :class="{ active: !showSheet }"
+          @click="setView('board')"
+        >
+          Board
+        </button>
+        <button
+          type="button"
+          class="shell__navbtn"
+          :class="{ active: showSheet }"
+          @click="setView('sheet')"
+        >
+          Timesheet
+        </button>
+      </nav>
+    </header>
+
+    <main class="shell__main">
+      <div v-if="err" class="fatal">
+        <h2>UI error</h2>
+        <pre class="pre">{{ String(err && (err.message || err)) }}</pre>
+        <p>Check the browser console for stack traces.</p>
+      </div>
+      <TimeSheet v-else-if="showSheet" />
+      <TimeBoard v-else />
+    </main>
+  </div>
+
+  <div v-else class="shell shell--loading">
+    <div class="shell__loading">
+      <div class="shell__spinner" aria-hidden="true"></div>
+      <p>Loading Logger…</p>
     </div>
-    <TimeSheet v-else-if="showSheet" />
-    <TimeBoard v-else />
   </div>
 </template>
 
@@ -79,4 +133,115 @@ const showSheet = computed(() => new URLSearchParams(location.search).get('sheet
 
 .fatal { padding:16px; color:#991b1b; background:#fee2e2; border:1px solid #fecaca; border-radius: 10px; margin:16px; }
 .pre { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+.shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.shell__header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 24px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03);
+}
+.shell__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.shell__logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  background: var(--btn-blue-bg);
+  color: var(--primary);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.shell__titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.shell__title {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+  color: var(--text);
+}
+.shell__subtitle {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+.shell__nav {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+.shell__navbtn {
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.06s ease;
+}
+.shell__navbtn:hover {
+  background: var(--btn-blue-bg-hover);
+  transform: translateY(1px);
+}
+.shell__navbtn.active {
+  background: var(--btn-blue-bg);
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--border) 50%, var(--primary) 50%);
+}
+.shell__main {
+  flex: 1;
+  padding: 12px 18px 24px;
+}
+.shell--loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.shell__loading {
+  display: grid;
+  gap: 10px;
+  place-items: center;
+  padding: 24px;
+  background: var(--panel);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border);
+}
+.shell__spinner {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary);
+  animation: shell-spin 0.9s linear infinite;
+}
+@keyframes shell-spin {
+  to { transform: rotate(360deg); }
+}
 </style>

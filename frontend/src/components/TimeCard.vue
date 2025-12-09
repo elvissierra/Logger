@@ -260,150 +260,174 @@ function onStop(){ emit('stop', props.card) }
 </template>
 
 <style scoped>
-/* Knowledge Drop — Card styles: full vs compact, hover states, and small in-card controls */
-.tcard {
-  display: grid;
-  grid-template-rows: auto 1fr auto; /* header | body grows | footer at bottom */
-  grid-auto-rows: min-content;
-  gap: .55rem;
-  background: var(--card, #ffffff);
-  border: 1px solid var(--border, #e5e7eb);
-  border-radius: var(--radius, 12px);
-  padding: .75rem .9rem;
-  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,.06));
-  transition: box-shadow .15s ease, transform .08s ease, border-color .2s ease, background .2s ease;
-  overflow: hidden;
-  min-height: 112px; /* ensure room so footer doesn't crowd header */
-}
-.tcard:hover { box-shadow: var(--shadow-md, 0 6px 16px rgba(0,0,0,.08)); border-color: color-mix(in srgb, var(--border, #e5e7eb) 70%, var(--primary, #5b8cff) 30%); }
-.tcard.editing { background: var(--panel, #7282c2); }
-.tcard__body { color: var(--text, #374151); min-height: 52px; overflow: hidden; }
-.tcard__body--compact { overflow: hidden; } /* weekly grid variant */
-.tcard__body p { margin: .25rem 0; word-break: break-word; overflow-wrap: anywhere; }
-.tcard .desc,
-.tcard .notes { display: none !important; }
-.tcard__body--compact .desc,
-.tcard__body--compact .notes { display: none; }
-.tcard__head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .6rem; }
-.handle { cursor: grab; user-select: none; font-size: 1rem; line-height: 1; opacity: .7; }
-.tcard__title { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
-.title { font-weight: 700; letter-spacing: .2px; }
-.chip { font-size: .75rem; padding: .15rem .45rem; border-radius: 999px; background: color-mix(in srgb, var(--primary, #5b8cff) 18%, transparent); color: var(--text, #111827); border: 1px solid var(--border, #e5e7eb); }
-.tcard__title { gap: .45rem; }
-.tcard__title .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hours { font-weight: 600; opacity: .9; }
-.tcard.editing { overflow: visible; }
-/* color-only priority dot */
-.prio-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; border: 1px solid var(--border, #e5e7eb); }
-.prio-dot.p-low { background: #93c5fd; border-color: #93c5fd; }
-.prio-dot.p-normal { background: #a5b4fc; border-color: #a5b4fc; }
-.prio-dot.p-high { background: #fdba74; border-color: #fdba74; }
-.prio-dot.p-critical { background: #fca5a5; border-color: #fca5a5; }
-
-/* description clamp */
-.desc.clamped { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.link.more { background: transparent; border: none; color: var(--primary, #5b8cff); padding: 0; cursor: pointer; }
-
-/* footer actions */
-.tcard__foot { display: flex; justify-content: flex-end; gap: .35rem; margin-top: 0; align-self: end;}
-.prio { font-size: .75rem; padding: .15rem .45rem; border-radius: 999px; border: 1px solid var(--border, #e5e7eb); }
-.prio.p-low { background: #eef6ff; color: #1e3a8a; }
-.prio.p-normal { background: #eef2ff; color: #3730a3; }
-.prio.p-high { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
-.prio.p-critical { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
-.icon { border: 1px solid var(--border, #e5e7eb); border-radius: 8px; background: var(--panel-2, #f3f4f6); cursor: pointer; padding: .25rem .45rem; line-height: 1; }
-.icon:hover { background: #e9eef7; }
-.hint{ align-self:center; color:var(--muted); font-size:.85rem; margin-left:.25rem; }
-
-.tcard__edit .grid { display: grid; gap: .35rem; }
-.tcard__edit label { display: grid; gap: .2rem; }
-.tcard__edit .row { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: .35rem; }
-
-input, textarea, button { font: inherit; color: var(--text, #111827); }
-
-input, textarea {
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
-  padding: .4rem .5rem;
-  border: 1px solid var(--border, #d1d5db);
-  border-radius: 8px;
-  background: var(--panel, #ffffff);
-}
-@media (max-width: 520px) {
-  .tcard__edit .row { grid-template-columns: 1fr; }
-}
-select { width: 100%; max-width: 100%; box-sizing: border-box; }
-
-input[type="datetime-local"] { line-height: 1.2; }
-
-input[type="datetime-local"] {
-  font-size: .9rem;
-  padding: .32rem .45rem;
-  white-space: nowrap;     /* keep on one line */
-  overflow: hidden;        /* hide overflow */
-  text-overflow: ellipsis; /* show … when too long */
-}
-/* WebKit/Blink: compact the inner datetime editor pieces */
-input[type="datetime-local"]::-webkit-datetime-edit { padding: 0; }
-input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper { display: flex; }
-input[type="datetime-local"]::-webkit-datetime-edit-year-field,
-input[type="datetime-local"]::-webkit-datetime-edit-month-field,
-input[type="datetime-local"]::-webkit-datetime-edit-day-field,
-input[type="datetime-local"]::-webkit-datetime-edit-hour-field,
-input[type="datetime-local"]::-webkit-datetime-edit-minute-field,
-input[type="datetime-local"]::-webkit-datetime-edit-ampm-field {
-  padding: 0 .15em;
-}
-input[type="datetime-local"]::-webkit-calendar-picker-indicator { padding: 0 .2rem; }
-input, textarea, select { font-variant-numeric: tabular-nums; }
-.actions { display: flex; gap: .4rem; justify-content: flex-end; }
-button {
-  padding: .45rem .7rem; border: 1px solid var(--border, #d1d5db); border-radius: 8px; background: var(--panel-2, #f9fafb);
-  cursor: pointer; transition: background .15s ease, border-color .15s ease, transform .06s ease;
-}
-button:hover { background: #f0f2f6; }
-button:active { transform: translateY(1px); }
-button.primary { background: linear-gradient(180deg, var(--primary, #5b8cff), var(--primary-600, #3e6dff)); border-color: color-mix(in srgb, var(--border, #d1d5db) 40%, var(--primary, #5b8cff) 60%); color: #fff; }
-button.danger { border-color: #ef4444; color: #b91c1c; }
- .actions__icons { display: flex; gap: .35rem; }
-/* --- Compact variant for weekly grid --- */
-.tcard.compact { padding: .45rem .5rem; min-height: 56px; grid-template-rows: auto 1fr; }
-.tcard__head--compact {
-  display: grid;
-  grid-template-columns: auto 1fr auto auto; /* handle | times | hours | edit */
-  align-items: center;
-  gap: .35rem;
-}
-.tcard__head--compact .times { font-size: .85rem; color: var(--text, #374151); font-weight: 600; }
-.tcard__head--compact .edit-compact { border-radius: 8px; padding: .2rem .4rem; }
-.hours-lg { font-weight: 800; font-size: .95rem; }
-.tcard.compact .handle,
-.tcard.compact .tcard__title,
-.tcard.compact .meta,
-.tcard__body--compact .desc,
-.tcard__body--compact .notes { display: none !important; }
-.tcard.compact .tcard__foot { display: none; }
-
-.mini-details { border-top: 1px dashed var(--border); padding-top: .35rem; }
-.mini-details summary { cursor: pointer; color: var(--primary); list-style: none; }
-.mini-details summary::-webkit-details-marker { display: none; }
-
-/* legacy: hide any old text priority pill if present */
-.tcard .prio { display: none !important; }
-
-/* When a compact card is editing, stack Start/End vertically to avoid overflow */
-.tcard.compact.editing .tcard__edit .row { grid-template-columns: 1fr; }
-
-/* Slightly reduce padding while editing (compact) to gain horizontal room */
-.tcard.compact.editing { padding: .6rem .6rem; }
-
-/* Keep datetime inputs within bounds and a bit tighter in compact edit mode */
-.tcard.compact.editing input[type="datetime-local"] {
-  width: 100%;
-  max-width: 100%;
-  font-size: .88rem;
-  padding: .3rem .45rem;
-}
-
+  /* Knowledge Drop — Card styles: full vs compact, hover states, and small in-card controls */
+  .tcard {
+    display: grid;
+    grid-template-rows: auto 1fr auto; /* header | body grows | footer at bottom */
+    grid-auto-rows: min-content;
+    gap: .55rem;
+    background: var(--card, #ffffff);
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: var(--radius, 12px);
+    padding: .75rem .9rem;
+    box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,.06));
+    transition: box-shadow .15s ease, transform .08s ease, border-color .2s ease, background .2s ease;
+    overflow: hidden;
+    min-height: 112px;
+    color: var(--text, #111827);
+  }
+  .tcard:hover { box-shadow: var(--shadow-md, 0 6px 16px rgba(0,0,0,.08)); border-color: color-mix(in srgb, var(--border, #e5e7eb) 70%, var(--primary, #5b8cff) 30%); }
+  .tcard.editing { background: var(--panel, #7282c2); }
+  .tcard__body { color: var(--text, #374151); min-height: 52px; overflow: hidden; }
+  .tcard__body--compact { overflow: hidden; } /* weekly grid variant */
+  .tcard__body p { margin: .25rem 0; word-break: break-word; overflow-wrap: anywhere; }
+  .tcard .desc,
+  .tcard .notes { display: none !important; }
+  .tcard__body--compact .desc,
+  .tcard__body--compact .notes { display: none; }
+  .tcard__head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .6rem; }
+  .handle { cursor: grab; user-select: none; font-size: 1rem; line-height: 1; opacity: .7; }
+  .tcard__title { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+  .title { font-weight: 700; letter-spacing: .2px; }
+  .chip { font-size: .75rem; padding: .15rem .45rem; border-radius: 999px; background: color-mix(in srgb, var(--primary, #5b8cff) 18%, transparent); color: var(--text, #111827); border: 1px solid var(--border, #e5e7eb); }
+  .tcard__title { gap: .45rem; }
+  .tcard__title .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hours { font-weight: 600; opacity: .9; }
+  .tcard.editing { overflow: visible; }
+  /* color-only priority dot */
+  .prio-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; border: 1px solid var(--border, #e5e7eb); }
+  .prio-dot.p-low { background: #93c5fd; border-color: #93c5fd; }
+  .prio-dot.p-normal { background: #a5b4fc; border-color: #a5b4fc; }
+  .prio-dot.p-high { background: #fdba74; border-color: #fdba74; }
+  .prio-dot.p-critical { background: #fca5a5; border-color: #fca5a5; }
+  
+  /* description clamp */
+  .desc.clamped { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .link.more { background: transparent; border: none; color: var(--primary, #5b8cff); padding: 0; cursor: pointer; }
+  
+  /* footer actions */
+  .tcard__foot { display: flex; justify-content: flex-end; gap: .35rem; margin-top: 0; align-self: end;}
+  .prio { font-size: .75rem; padding: .15rem .45rem; border-radius: 999px; border: 1px solid var(--border, #e5e7eb); }
+  .prio.p-low { background: #eef6ff; color: #1e3a8a; }
+  .prio.p-normal { background: #eef2ff; color: #3730a3; }
+  .prio.p-high { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
+  .prio.p-critical { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
+  .icon { border: 1px solid var(--border, #e5e7eb); border-radius: 8px; background: var(--panel-2, #f3f4f6); cursor: pointer; padding: .25rem .45rem; line-height: 1; }
+  .icon:hover { background: #e9eef7; }
+  .hint{ align-self:center; color:var(--muted); font-size:.85rem; margin-left:.25rem; }
+  
+  .tcard__edit .grid { display: grid; gap: .35rem; }
+  .tcard__edit label { display: grid; gap: .2rem; }
+  .tcard__edit .row { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: .35rem; }
+  
+  input, textarea, button { font: inherit; color: var(--text, #111827); }
+  
+  input, textarea {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: .4rem .5rem;
+    border: 1px solid var(--border, #d1d5db);
+    border-radius: 8px;
+    background: var(--panel, #ffffff);
+  }
+  @media (max-width: 520px) {
+    .tcard__edit .row { grid-template-columns: 1fr; }
+  }
+  select { width: 100%; max-width: 100%; box-sizing: border-box; }
+  
+  input[type="datetime-local"] { line-height: 1.2; }
+  
+  input[type="datetime-local"] {
+    font-size: .9rem;
+    padding: .32rem .45rem;
+    white-space: nowrap;     /* keep on one line */
+    overflow: hidden;        /* hide overflow */
+    text-overflow: ellipsis; /* show … when too long */
+  }
+  /* WebKit/Blink: compact the inner datetime editor pieces */
+  input[type="datetime-local"]::-webkit-datetime-edit { padding: 0; }
+  input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper { display: flex; }
+  input[type="datetime-local"]::-webkit-datetime-edit-year-field,
+  input[type="datetime-local"]::-webkit-datetime-edit-month-field,
+  input[type="datetime-local"]::-webkit-datetime-edit-day-field,
+  input[type="datetime-local"]::-webkit-datetime-edit-hour-field,
+  input[type="datetime-local"]::-webkit-datetime-edit-minute-field,
+  input[type="datetime-local"]::-webkit-datetime-edit-ampm-field {
+    padding: 0 .15em;
+  }
+  input[type="datetime-local"]::-webkit-calendar-picker-indicator { padding: 0 .2rem; }
+  input, textarea, select { font-variant-numeric: tabular-nums; }
+  .actions { display: flex; gap: .4rem; justify-content: flex-end; }
+  button {
+    padding: .45rem .7rem; border: 1px solid var(--border, #d1d5db); border-radius: 8px; background: var(--panel-2, #f9fafb);
+    cursor: pointer; transition: background .15s ease, border-color .15s ease, transform .06s ease;
+  }
+  button:hover { background: #f0f2f6; }
+  button:active { transform: translateY(1px); }
+  button.primary { background: linear-gradient(180deg, var(--primary, #5b8cff), var(--primary-600, #3e6dff)); border-color: color-mix(in srgb, var(--border, #d1d5db) 40%, var(--primary, #5b8cff) 60%); color: #fff; }
+  button.danger { border-color: #ef4444; color: #b91c1c; }
+  .actions__icons { display: flex; gap: .35rem; }
+  /* --- Compact variant for weekly grid --- */
+  .tcard.compact {
+    padding: .4rem .55rem;
+    min-height: 72px;
+    grid-template-rows: auto;
+    align-content: center;
+  }
+  .tcard__head--compact {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto; /* handle | times | hours | edit */
+    align-items: center;
+    gap: .3rem;
+  }
+  .tcard__head--compact .times {
+    font-size: .86rem;
+    color: #111827;
+    font-weight: 650;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.1;
+  }
+  :global([data-theme="dark"]) .tcard__head--compact .times {
+    color: #e5f3f0;
+  }
+  .tcard__head--compact .edit-compact { border-radius: 8px; padding: .2rem .4rem; }
+  .hours-lg {
+    font-weight: 700;
+    font-size: .86rem;
+    padding: .08rem .4rem;
+    border-radius: 999px;
+    background: rgba(47, 143, 131, 0.08);
+  }
+  .tcard.compact .handle,
+  .tcard.compact .tcard__title,
+  .tcard.compact .meta,
+  .tcard__body--compact .desc,
+  .tcard__body--compact .notes { display: none !important; }
+  .tcard.compact .tcard__foot { display: none; }
+  
+  .mini-details { border-top: 1px dashed var(--border); padding-top: .35rem; }
+  .mini-details summary { cursor: pointer; color: var(--primary); list-style: none; }
+  .mini-details summary::-webkit-details-marker { display: none; }
+  
+  /* legacy: hide any old text priority pill if present */
+  .tcard .prio { display: none !important; }
+  
+  /* When a compact card is editing, stack Start/End vertically to avoid overflow */
+  .tcard.compact.editing .tcard__edit .row { grid-template-columns: 1fr; }
+  
+  /* Slightly reduce padding while editing (compact) to gain horizontal room */
+  .tcard.compact.editing { padding: .6rem .6rem; }
+  
+  /* Keep datetime inputs within bounds and a bit tighter in compact edit mode */
+  .tcard.compact.editing input[type="datetime-local"] {
+    width: 100%;
+    max-width: 100%;
+    font-size: .88rem;
+    padding: .3rem .45rem;
+  }
+  
+  
 </style>
