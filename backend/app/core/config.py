@@ -1,5 +1,3 @@
-
-
 """
 Application settings (Knowledge Drop)
 
@@ -18,6 +16,7 @@ Why necessary
 Notes
 - Keep types simple (str, List[str]) to avoid pulling in pydantic just for settings.
 """
+
 import os
 from functools import lru_cache
 from typing import List
@@ -35,7 +34,9 @@ class Settings:
     # main.py consumes this to install CORSMiddleware with credentials enabled.
     BACKEND_CORS_ORIGINS: List[str] = [
         origin.strip()
-        for origin in os.getenv("BACKEND_CORS_ORIGINS", "http://localhost:5173").split(",")
+        for origin in os.getenv("BACKEND_CORS_ORIGINS", "http://localhost:5173").split(
+            ","
+        )
         if origin.strip()
     ]
 

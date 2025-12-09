@@ -13,9 +13,11 @@ Why necessary
 Notes
 - token_version lets you force-logout users by bumping the version; last_password_change aids forensics.
 """
+
 from sqlalchemy import Column, String, Boolean, TIMESTAMP, Text, func, Index
 import uuid
 from app.core.database import Base
+
 
 class User(Base):
     __tablename__ = "users"
@@ -34,11 +36,20 @@ class User(Base):
     email_verified = Column(Boolean, nullable=False, server_default="false")
     # Security metadata used to invalidate tokens and track password changes.
     token_version = Column(String, nullable=False, server_default="0")
-    last_password_change = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+    last_password_change = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
     # Store a hash of the refresh token and its JTI so you can revoke/rotate securely without storing raw tokens.
     refresh_token_hash = Column(Text, nullable=True)
     refresh_jti = Column(String, nullable=True)
 
     # Timestamps for audit trails and cache invalidation.
-    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_at = Column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

@@ -37,32 +37,52 @@ COOKIE_DOMAIN = os.getenv("COOKIE_DOMAIN") or None
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
 
 def hash_password(p: str) -> str:
     return pwd_context.hash(p)
 
+
 def verify_password(p: str, h: str) -> bool:
     return pwd_context.verify(p, h)
 
+
 def create_access_token(sub: str, token_version: str = "0") -> str:
     exp = utcnow() + timedelta(minutes=ACCESS_TOKEN_MIN)
-    payload = {"sub": sub, "type": "access", "exp": exp, "iat": utcnow(), "ver": token_version}
+    payload = {
+        "sub": sub,
+        "type": "access",
+        "exp": exp,
+        "iat": utcnow(),
+        "ver": token_version,
+    }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
 
 def create_refresh_token(sub: str, token_version: str = "0") -> Tuple[str, str]:
     exp = utcnow() + timedelta(days=REFRESH_TOKEN_DAYS)
     jti = str(uuid.uuid4())
-    payload = {"sub": sub, "type": "refresh", "jti": jti, "exp": exp, "iat": utcnow(), "ver": token_version}
+    payload = {
+        "sub": sub,
+        "type": "refresh",
+        "jti": jti,
+        "exp": exp,
+        "iat": utcnow(),
+        "ver": token_version,
+    }
     token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
     return token, jti
+
 
 def decode_token(token: str) -> dict:
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
 
 def set_auth_cookies(resp, access: str, refresh: str, csrf: str):
     """
@@ -75,9 +95,11 @@ def set_auth_cookies(resp, access: str, refresh: str, csrf: str):
     # readable CSRF token for SPA (double-submit)
     resp.set_cookie("csrf_token", csrf, httponly=False, **common)
 
+
 def clear_auth_cookies(resp):
     for name in ("access_token", "refresh_token", "csrf_token"):
         resp.delete_cookie(name, domain=COOKIE_DOMAIN, samesite="lax")
+
 
 def require_csrf(request: Request):
     """Double-submit CSRF guard; raises 403 if header/cookie mismatch on mutating requests."""

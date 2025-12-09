@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, ConfigDict
 
+
 # Common fields shared by create/update; persisted timestamps are UTC
 class TimeEntryBase(BaseModel):
     project_code: str
@@ -27,9 +28,11 @@ class TimeEntryBase(BaseModel):
     end_utc: Optional[datetime] = None
     notes: Optional[str] = None
 
+
 # Server sets user_id from auth; field remains optional to accept client payloads
 class TimeEntryCreate(TimeEntryBase):
     user_id: Optional[str] = None
+
 
 # PATCH semantics: only provided fields are updated
 class TimeEntryUpdate(BaseModel):
@@ -38,6 +41,7 @@ class TimeEntryUpdate(BaseModel):
     start_utc: Optional[datetime] = None
     end_utc: Optional[datetime] = None
     notes: Optional[str] = None
+
 
 # Response model including server-managed fields; from_attributes=True lets Pydantic read SQLAlchemy objects
 class TimeEntryOut(BaseModel):

@@ -12,6 +12,7 @@ How it collaborates
 Why necessary
 - Keeps data rules (seconds recompute, overlap constraints) in one place so both API and background jobs are consistent.
 """
+
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
@@ -40,18 +41,15 @@ def list_entries(
     if user_id:
         q = q.filter(TimeEntry.user_id == user_id)
     if date_from and date_to:
-        q = q.filter(and_(TimeEntry.start_utc >= date_from, TimeEntry.start_utc < date_to))
+        q = q.filter(
+            and_(TimeEntry.start_utc >= date_from, TimeEntry.start_utc < date_to)
+        )
     elif date_from:
         q = q.filter(TimeEntry.start_utc >= date_from)
     elif date_to:
         q = q.filter(TimeEntry.start_utc < date_to)
     # Keep the query bounded; large ranges should be paginated (skip/limit).
-    return (
-        q.order_by(TimeEntry.start_utc.desc())
-         .offset(skip)
-         .limit(limit)
-         .all()
-    )
+    return q.order_by(TimeEntry.start_utc.desc()).offset(skip).limit(limit).all()
 
 
 def get_entry(db: Session, entry_id: str) -> Optional[TimeEntry]:

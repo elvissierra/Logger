@@ -4,11 +4,13 @@
 # - Supports both offline (SQL script) and online (live DB connection) migrations.
 # - Reads DATABASE_URL from env, with a fallback to app/.env for local dev convenience.
 """
+
 from logging.config import fileConfig
 import os
 from app.models import user  # noqa: F401
 from sqlalchemy import engine_from_config, pool
 from alembic import context
+
 
 # Minimal .env parser to avoid importing dotenv in the Alembic runtime; safe for local-only usage.
 def _fallback_database_url_from_dotenv() -> str | None:
@@ -31,8 +33,10 @@ def _fallback_database_url_from_dotenv() -> str | None:
         return None
     return None
 
+
 # --- Import your SQLAlchemy Base + models so Alembic "sees" them
 from app.core.database import Base
+
 # Ensure model modules are imported to register tables/indexes on Base.metadata
 from app.models import time_entry  # noqa: F401  (import side-effect registers model)
 
@@ -46,6 +50,7 @@ if config.config_file_name is not None:
 # Base metadata collected from imported models; Alembic uses this to autogenerate migrations.
 target_metadata = Base.metadata
 
+
 def get_url() -> str:
     # Prefer environment variable so CI/CD and shells can override
     url = os.getenv("DATABASE_URL")
@@ -58,6 +63,7 @@ def get_url() -> str:
     # Fail fast so migrations don't run against SQLite or an unexpected default.
     raise RuntimeError("DATABASE_URL is not set")
 
+
 def run_migrations_offline():
     """Run migrations in 'offline' mode."""
     context.configure(
@@ -65,12 +71,13 @@ def run_migrations_offline():
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        compare_type=True,             # detect type changes
-        compare_server_default=True,   # detect default changes
+        compare_type=True,  # detect type changes
+        compare_server_default=True,  # detect default changes
         # compare_type/server_default lets Alembic detect column type/default changes across revisions.
     )
     with context.begin_transaction():
         context.run_migrations()
+
 
 def run_migrations_online():
     """Run migrations in 'online' mode."""
@@ -90,6 +97,7 @@ def run_migrations_online():
         )
         with context.begin_transaction():
             context.run_migrations()
+
 
 if context.is_offline_mode():
     run_migrations_offline()
