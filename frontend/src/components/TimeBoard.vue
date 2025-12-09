@@ -783,15 +783,16 @@ watch([currentWeekStart, groupBy], () => { load() })
       </div>
     </section>
 
-    <p v-if="error" class="error">{{ error }}</p>
-    <p v-if="loading">Loading…</p>
-
-    <!-- Scroller keeps header row and columns aligned on all widths -->
-    <!-- Weekly Board/Grid: 7-day matrix with swimlanes on rows; entries rendered only when present in a cell. -->
-    <div class="board__scroller" v-if="layoutMode==='grid'">
-      <div class="grid">
+      <p v-if="error" class="error">{{ error }}</p>
+      <p v-if="loading">Loading…</p>
+        
+      <!-- Scroller keeps header row and columns aligned on all widths -->
+      <!-- Weekly Board/Grid: 7-day matrix with swimlanes on rows; entries rendered only when present in a cell. -->
+      <div class="board__scroller" v-if="layoutMode==='grid'">
+        <h2 class="board__sectiontitle">Weekly log</h2>
+        <div class="grid">
         <!-- Header row -->
-        <div class="cell cell--head cell--rowhead"></div>
+        <div class="cell cell--head"></div>
         <div v-for="d in headerDays" :key="d.key" class="cell cell--head">
           <div class="dayhead">
             <strong>{{ d.label }}</strong>
@@ -954,6 +955,12 @@ watch([currentWeekStart, groupBy], () => { load() })
   position: sticky; top: 0; z-index: 10; padding: 10px 0 12px; background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
+.board__sectiontitle {
+  margin: 8px 0 4px;
+  font-size: .95rem;
+  font-weight: 700;
+  color: var(--muted);
+}
 .nav { display: flex; align-items: center; gap: 6px; }
 .nav button {
   padding: .36rem .55rem;
@@ -1007,13 +1014,46 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  min-height: 100px;
+  min-height: 120px;
   position: relative;
+  padding: 26px 6px 8px;
 }
+
+.cell:hover {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 25%, transparent);
+  border-color: color-mix(in srgb, var(--border) 60%, var(--primary) 40%);
+}
+
 .cell--head { background: transparent; border: none; min-height: auto; }
+/* Collapse the top-left header spacer so it doesn’t look like a random pill */
+.grid > .cell.cell--head:first-child {
+  padding: 0;
+  min-height: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
 .cell--rowhead { position: sticky; left: 0; z-index: 5; background: var(--panel); border-right: 1px solid var(--border); }
 .cell__empty { pointer-events: none; }
-.dayhead { display: flex; align-items: baseline; justify-content: space-between; padding: 8px 6px; border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 700; font-size: .95rem; }
+.dayhead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-weight: 700;
+  font-size: .92rem;
+}
+
+.dayhead strong {
+  letter-spacing: .01em;
+}
+
+.dayhead small {
+  font-weight: 600;
+  opacity: .9;
+}
 .lanehead { display: flex; align-items: baseline; justify-content: space-between; padding: 10px 8px; font-weight: 700; font-size: .95rem; }
 .lanehead__title { display: flex; align-items: center; gap: 6px; }
 .lanehead__right { display: flex; align-items: center; gap: 6px; }
@@ -1042,9 +1082,60 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 .cell__actions { position: absolute; top: 6px; right: 6px; }
 .cell__actions .mini { font-size: 16px; padding: .15rem .45rem; line-height: 1.1; }
 
-.droplist { display: grid; gap: 8px; padding: 8px; max-height: calc(100vh - 220px); overflow: auto; }
-/* Ensure TimeCard surfaces inside cells look like cards and don't “blend” into the cell */
-.droplist :deep(.tcard){ background:#fff; border-color:#cbd5e1; box-shadow:var(--shadow-sm); overflow:hidden; }
+/* Default droplist cards (focus + simple layouts) */
+.droplist :deep(.tcard) {
+  background: var(--panel);
+  color: var(--text);
+  border-color: var(--border);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+/* Weekly grid: compact entries should read like simple rows, not blobs */
+.cell .droplist {
+  margin-top: 4px;
+}
+
+.cell .droplist :deep(.tcard.compact) {
+  box-shadow: none;
+  background: var(--panel-2);
+  border-radius: 10px;
+  padding: .45rem .6rem;
+  min-height: auto;
+}
+
+/* In the weekly grid, hide the drag handle and tighten the header layout */
+.cell .droplist :deep(.tcard__head--compact) {
+  grid-template-columns: 1fr auto auto; /* times | hours | edit */
+  column-gap: .35rem;
+}
+
+.cell .droplist :deep(.handle) {
+  display: none; /* no grip icon in weekly view */
+}
+
+/* Make the time range crisp and readable */
+.cell .droplist :deep(.tcard__head--compact .times) {
+  font-size: .86rem;
+  font-weight: 650;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Hours pill: smaller, more chip-like, not a big circle */
+.cell .droplist :deep(.hours-lg) {
+  font-size: .82rem;
+  padding: .06rem .4rem;
+  background: rgba(47, 143, 131, 0.12);
+}
+
+/* Edit button in the grid: de-emphasized but still accessible */
+.cell .droplist :deep(.edit-compact) {
+  padding: .16rem .38rem;
+}
+
 /* Drag classes for better feedback */
 :global(.drag-ghost)    { opacity: .6; transform: rotate(2deg); }
 :global(.drag-chosen)   { box-shadow: var(--shadow-md) !important; }
