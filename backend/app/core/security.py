@@ -16,9 +16,10 @@ Notes
 - Rotating refresh tokens should go with server-side revocation/RT hash matching (see User.refresh_token_hash / refresh_jti).
 """
 
-import os, uuid
+import os
+import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Tuple, Optional
+from typing import Tuple
 import jwt
 from passlib.context import CryptContext
 from fastapi import Request, HTTPException

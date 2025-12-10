@@ -19,7 +19,6 @@ Notes
 
 from fastapi import APIRouter, Depends, HTTPException, Response, Request, status
 from sqlalchemy.orm import Session
-from pydantic import EmailStr
 import secrets
 
 from app.core.database import get_db
@@ -33,8 +32,8 @@ from app.core.security import (
     decode_token,
     set_auth_cookies,
     clear_auth_cookies,
-    require_csrf,
     pwd_context,
+    require_csrf,
 )
 
 router = APIRouter()
@@ -156,7 +155,8 @@ def revoke_all(response: Response, request: Request, db: Session = Depends(get_d
 # Clear cookies client-side and best-effort clear stored refresh state on the user
 @router.post("/logout")
 def logout(response: Response, request: Request, db: Session = Depends(get_db)):
-    # optional: require CSRF for logout as well
+    # Enforce CSRF for logout to prevent cross-site triggers
+    require_csrf(request)
     clear_auth_cookies(response)
     # best effort: invalidate stored refresh
     access_user = None

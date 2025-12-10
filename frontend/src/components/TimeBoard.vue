@@ -8,7 +8,7 @@
  *   (1) Board/Grid with a weekly matrix and a Today focus area, (2) Simple layout with per-day columns.
  *
  * How pieces work together
- * - Auth: We call /api/auth/me to get the user and store the id in localStorage for per-user client keys.
+ * - Auth: App.vue handles login/logout and sets the user id in localStorage; this component assumes the user is already authenticated.
  * - API access: apiFetch() wraps fetch with credentials and silent refresh on 401 via /api/auth/refresh.
  * - Timers: startTimer()/stopTimer() create/extend entries; runningId is persisted per-user in localStorage.
  * - Mapping: assignCardsToGrid() places entries into lanes and day columns; drag & drop updates times and grouping.
@@ -86,66 +86,6 @@ const runningId = ref(_rk ? localStorage.getItem(_rk) : null)
 const TARGET_WEEKLY_HOURS = 40
 function setUserId(id){ localStorage.setItem('logger.userId', id) }
 
-// Auth state & flows: login/register/logout. After success we call checkMe() to capture the user and refresh the board.
-// --- Auth state ---
-const authedUser = ref(null)
-const authMode = ref('login') // 'login' | 'register'
-const authLoading = ref(false)
-const authErr = ref('')
-const loginEmail = ref('')
-const loginPwd = ref('')
-const regName = ref('')
-const regEmail = ref('')
-const regPwd = ref('')
-
-async function checkMe(){
-  try{
-    const r = await apiFetch(`${API_BASE}/api/auth/me`)
-    if (!r.ok) { authedUser.value = null; return }
-    const u = await r.json()
-    authedUser.value = u
-    if (u?.id) setUserId(u.id)
-  }catch{ authedUser.value = null }
-}
-
-async function doLogin(){
-  authErr.value=''; authLoading.value=true
-  try{
-    const r = await apiFetch(`${API_BASE}/api/auth/login`, {
-      method:'POST', headers:{ 'Content-Type':'application/json', 'X-CSRF-Token': getCsrf() },
-      body: JSON.stringify({ email: loginEmail.value.trim(), password: loginPwd.value })
-    })
-    if(!r.ok) throw new Error(await r.text())
-    await checkMe()
-    if (authedUser.value) { notify('Signed in', 'success'); await load() }
-  }catch(e){ authErr.value = String(e?.message || e) }
-  finally{ authLoading.value=false }
-}
-
-async function doRegister(){
-  authErr.value=''; authLoading.value=true
-  try{
-    const r = await apiFetch(`${API_BASE}/api/auth/register`, {
-      method:'POST', headers:{ 'Content-Type':'application/json', 'X-CSRF-Token': getCsrf() },
-      body: JSON.stringify({ name: regName.value.trim() || undefined, email: regEmail.value.trim(), password: regPwd.value })
-    })
-    if(!r.ok) throw new Error(await r.text())
-    await checkMe()
-    if (authedUser.value) { notify('Account created', 'success'); await load() }
-  }catch(e){ authErr.value = String(e?.message || e) }
-  finally{ authLoading.value=false }
-}
-
-async function doLogout(){
-  try { await apiFetch(`${API_BASE}/api/auth/logout`, { method:'POST', headers:{ 'X-CSRF-Token': getCsrf() } }) } catch{}
-  const uid = localStorage.getItem('logger.userId') || ''
-  localStorage.removeItem('logger.userId')
-  if (uid) localStorage.removeItem(`logger.runningEntry:${uid}`)
-  authedUser.value = null
-  notify('Signed out','success')
-}
-
-watch(authedUser, (u) => { if (u) load() })
 
 
 // Per-user running timer pointer: saved under key logger.runningEntry:<userId> so multiple users on the same browser
@@ -240,12 +180,9 @@ async function startLaneTimer(lane) {
 }
 
 onMounted(async () => {
-  await checkMe()
-  if (authedUser.value) {
-    await loadProjects()
-    await load()
-    window.addEventListener('keydown', onKey)
-  }
+  await loadProjects()
+  await load()
+  window.addEventListener('keydown', onKey)
 })
 onUnmounted(() => window.removeEventListener('keydown', onKey))
 
@@ -641,41 +578,7 @@ watch([currentWeekStart, groupBy], () => { load() })
 </script>
 
 <template>
-  <!-- Auth screen: simple email/password login/register forms. Cookies are set by the backend; we call checkMe() after. -->
-      <section v-if="!authedUser" class="auth">
-    <div class="auth__card">
-      <h2>{{ authMode==='login' ? 'Sign in' : 'Create account' }}</h2>
-      <form @submit.prevent="authMode==='login' ? doLogin() : doRegister()" class="auth__form">
-        <label v-if="authMode==='register'">Name
-          <input v-model="regName" />
-        </label>
-        <template v-if="authMode==='login'">
-          <label>Email
-            <input type="email" v-model="loginEmail" required autocomplete="username" />
-          </label>
-          <label>Password
-            <input type="password" v-model="loginPwd" required autocomplete="current-password" />
-          </label>
-        </template>
-        <template v-else>
-          <label>Email
-            <input type="email" v-model="regEmail" required autocomplete="username" />
-          </label>
-          <label>Password
-            <input type="password" v-model="regPwd" required autocomplete="new-password" />
-          </label>
-        </template>
-        <button :disabled="authLoading">{{ authLoading ? (authMode==='login' ? 'Signing in…' : 'Creating…') : (authMode==='login' ? 'Sign in' : 'Create account') }}</button>
-        <p v-if="authErr" class="error">{{ authErr }}</p>
-      </form>
-      <p class="hint">
-        <button class="link" @click="authMode = (authMode==='login' ? 'register' : 'login')">
-          {{ authMode==='login' ? 'No account? Create one' : 'Have an account? Sign in' }}
-        </button>
-      </p>
-    </div>
-  </section>
-  <section v-if="authedUser" class="board">
+  <section class="board">
     <div class="toastbox">
       <div v-for="t in toasts" :key="t.id" class="toast" :class="t.type">{{ t.msg }}</div>
     </div>
@@ -710,7 +613,6 @@ watch([currentWeekStart, groupBy], () => { load() })
         <button type="button" @click="toggleTheme" :title="theme==='dark' ? 'Switch to Light' : 'Switch to Dark'">
           {{ theme==='dark' ? '☀︎' : '🌙' }}
         </button>
-        <button type="button" @click="doLogout">Logout</button>
       </div>
     </header>
     <!-- Focus area (today): quick editing surface and lane-level actions like start/stop. -->
