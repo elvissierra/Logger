@@ -5,27 +5,51 @@ import TimeBoard from './components/TimeBoard.vue'
 // Optional debug/simple view: visit http://localhost:5173/?sheet=1
 // to render the lightweight TimeSheet page instead of the board
 import TimeSheet from './components/TimeSheet.vue'
-import { API_BASE, apiFetch } from './lib/api'
+import Login from './components/Login.vue'
+import { API_BASE, apiFetch, getCsrf } from './lib/api'
 
 const ready = ref(false)
+const err = ref(null)
+const user = ref(null)
+
+// Try to bootstrap from existing session cookie
 onMounted(async () => {
   try {
     const r = await apiFetch(`${API_BASE}/api/auth/me`)
     if (r.ok) {
       const me = await r.json()
+      user.value = me
       localStorage.setItem('logger.userId', me.id)
+    } else if (r.status === 401) {
+      // No valid session; ensure we don't carry stale localStorage state
+      localStorage.removeItem('logger.userId')
     }
-  } catch {}
-  ready.value = true
+  } catch (e) {
+    console.error(e)
+    // Leave user null; UI will fall back to login view
+    localStorage.removeItem('logger.userId')
+  } finally {
+    ready.value = true
+  }
 })
 
-const err = ref(null)
-onErrorCaptured((e) => { err.value = e; console.error(e); return false })
+onErrorCaptured((e) => {
+  err.value = e
+  console.error(e)
+  return false
+})
 
 const view = ref(
   new URLSearchParams(location.search).get('sheet') === '1' ? 'sheet' : 'board'
 )
 const showSheet = computed(() => view.value === 'sheet')
+const isAuthed = computed(() => !!(user.value && user.value.id))
+const username = computed(() => {
+  const u = user.value
+  if (!u || !u.email) return ''
+  const parts = String(u.email).split('@')
+  return parts[0] || u.email
+})
 
 function setView (mode) {
   view.value = mode === 'sheet' ? 'sheet' : 'board'
@@ -38,6 +62,28 @@ function setView (mode) {
   window.history.replaceState({}, '', url.toString())
 }
 
+// When LoginView succeeds, it emits the user payload so we can update app state
+function handleLoginSuccess (me) {
+  user.value = me
+  if (me && me.id) {
+    localStorage.setItem('logger.userId', me.id)
+  }
+}
+
+// Logout helper: clears server-side cookies and local app state
+async function handleLogout () {
+  try {
+    await apiFetch(`${API_BASE}/api/auth/logout`, {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': getCsrf() },
+    })
+  } catch (e) {
+    console.error(e)
+  } finally {
+    user.value = null
+    localStorage.removeItem('logger.userId')
+  }
+}
 </script>
 
 
@@ -51,24 +97,46 @@ function setView (mode) {
           <p class="shell__subtitle">Plan your week, log your work, see your time clearly.</p>
         </div>
       </div>
-      <nav class="shell__nav" aria-label="View switch">
+      <div
+        v-if="isAuthed"
+        class="shell__right"
+      >
+        <div
+          v-if="user && user.email"
+          class="shell__user"
+        >
+          <span class="shell__user-label">Signed in as:</span>
+          <span class="shell__user-name">{{ username }}</span>
+        </div>
+        <nav
+          class="shell__nav"
+          aria-label="View switch"
+        >
+          <button
+            type="button"
+            class="shell__navbtn"
+            :class="{ active: !showSheet }"
+            @click="setView('board')"
+          >
+            Board
+          </button>
+          <button
+            type="button"
+            class="shell__navbtn"
+            :class="{ active: showSheet }"
+            @click="setView('sheet')"
+          >
+            Timesheet
+          </button>
+        </nav>
         <button
           type="button"
-          class="shell__navbtn"
-          :class="{ active: !showSheet }"
-          @click="setView('board')"
+          class="shell__logout"
+          @click="handleLogout"
         >
-          Board
+          Logout
         </button>
-        <button
-          type="button"
-          class="shell__navbtn"
-          :class="{ active: showSheet }"
-          @click="setView('sheet')"
-        >
-          Timesheet
-        </button>
-      </nav>
+      </div>
     </header>
 
     <main class="shell__main">
@@ -77,8 +145,16 @@ function setView (mode) {
         <pre class="pre">{{ String(err && (err.message || err)) }}</pre>
         <p>Check the browser console for stack traces.</p>
       </div>
+
+      <!-- Not authenticated: show login screen -->
+      <Login
+        v-else-if="!isAuthed"
+        @login-success="handleLoginSuccess"
+      />
+
+      <!-- Authenticated: show requested time view -->
       <TimeSheet v-else-if="showSheet" />
-      <TimeBoard v-else />
+      <TimeBoard v-else :user="user" />
     </main>
   </div>
 
@@ -213,6 +289,47 @@ function setView (mode) {
   background: var(--btn-blue-bg);
   color: var(--primary);
   border-color: color-mix(in srgb, var(--border) 50%, var(--primary) 50%);
+}
+
+.shell__user {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.shell__user-label {
+  opacity: 0.9;
+}
+.shell__user-name {
+  font-weight: 600;
+  color: var(--text);
+}
+.shell__right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.shell__logout {
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.06s ease;
+}
+.shell__logout:hover {
+  background: var(--btn-blue-bg);
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--border) 50%, var(--primary) 50%);
+  transform: translateY(1px);
 }
 .shell__main {
   flex: 1;

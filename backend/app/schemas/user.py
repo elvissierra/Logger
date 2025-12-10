@@ -16,7 +16,6 @@ Notes
 
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, ConfigDict, Field
-from typing import Optional
 
 
 # Payload for /register; server handles email uniqueness and password hashing

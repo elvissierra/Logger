@@ -27,7 +27,6 @@ from app.core.database import Base, engine
 # Strict security middleware for production hardening
 from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from starlette.middleware import Middleware
 
 
 APP_NAME = os.getenv("APP_NAME", "Logger API")

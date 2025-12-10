@@ -25,26 +25,38 @@ export async function getJSON (path) {
   if (!r.ok) throw new Error(await r.text())
   return r.json()
 }
+
 export async function postJSON (path, body, headers = {}) {
+  const csrf = getCsrf()
+  const finalHeaders = { 'Content-Type': 'application/json', ...headers }
+  if (csrf) finalHeaders['X-CSRF-Token'] = csrf
   const r = await apiFetch(`${API_BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...headers },
+    headers: finalHeaders,
     body: JSON.stringify(body)
   })
   if (!r.ok) throw new Error(await r.text())
   return r.json()
 }
+
 export async function patchJSON (path, body, headers = {}) {
+  const csrf = getCsrf()
+  const finalHeaders = { 'Content-Type': 'application/json', ...headers }
+  if (csrf) finalHeaders['X-CSRF-Token'] = csrf
   const r = await apiFetch(`${API_BASE}${path}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...headers },
+    headers: finalHeaders,
     body: JSON.stringify(body)
   })
   if (!r.ok) throw new Error(await r.text())
   return r.json()
 }
+
 export async function del (path, headers = {}) {
-  const r = await apiFetch(`${API_BASE}${path}`, { method: 'DELETE', headers })
+  const csrf = getCsrf()
+  const finalHeaders = { ...headers }
+  if (csrf) finalHeaders['X-CSRF-Token'] = csrf
+  const r = await apiFetch(`${API_BASE}${path}`, { method: 'DELETE', headers: finalHeaders })
   if (!r.ok) throw new Error(await r.text())
   return true
 }
