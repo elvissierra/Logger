@@ -179,10 +179,10 @@ function setView (mode) {
 }
 .shell__title {
   margin: 0;
-  font-size: 1.3rem;
-  font-weight: 750;
-  letter-spacing: 0.01em;
-  color: var(--text);
+  font-size: 1.6rem;              /* make the app name clearly dominant */
+  font-weight: 780;
+  letter-spacing: 0.03em;         /* subtle brand-like tracking */
+  color: var(--primary);          /* tie the brand to the primary accent */
 }
 .shell__subtitle {
   margin: 0;

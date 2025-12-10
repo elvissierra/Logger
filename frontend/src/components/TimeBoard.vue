@@ -803,42 +803,51 @@ watch([currentWeekStart, groupBy], () => { load() })
         <!-- Swimlane rows -->
         <template v-for="lane in swimlanes" :key="lane.key">
         <div class="cell cell--rowhead">
-            <article class="projcard">
-              <header class="projcard__head">
-                <span
-                  class="prio-dot"
-                  :class="('p-' + (getLaneMeta(lane.key).priority || 'Normal').toLowerCase())"
-                  :title="getLaneMeta(lane.key).priority || 'Normal'">
-                </span>
-                <h4 class="title" :title="lane.title">{{ lane.title }}</h4>
-                <span class="hours">{{ fmtH(laneHours(lane), 2) }} h</span>
-              </header>
-            
-              <section class="projcard__body">
-                <p class="desc" :class="{ clamped: !isExpanded(lane.key) }" v-if="laneDesc(lane.key)">
-                  {{ laneDesc(lane.key) }}
-                </p>
+          <article class="projcard">
+            <!-- Row 1: color dot + project name -->
+            <header class="projcard__head">
+              <span
+                class="prio-dot"
+                :class="('p-' + (getLaneMeta(lane.key).priority || 'Normal').toLowerCase())"
+                :title="getLaneMeta(lane.key).priority || 'Normal'">
+              </span>
+              <h4
+                class="title"
+                :title="lane.title + (laneDesc(lane.key) ? ' — ' + laneDesc(lane.key) : '')"
+              >
+                {{ lane.title }}
+              </h4>
+            </header>
+          
+            <!-- Row 2: hours -->
+            <div class="projcard__hoursrow">
+              <span class="projcard__hours-pill">
+                {{ fmtH(laneHours(lane), 2) }} h
+              </span>
+            </div>
+          
+            <!-- Row 3: buttons -->
+            <footer class="projcard__foot">
+              <div class="spacer"></div>
+              <div class="actions__icons">
                 <button
-                  v-if="isDescLong(lane.key)"
-                  class="link more"
-                  @click="toggleMoreDesc(lane.key)">
-                  {{ isExpanded(lane.key) ? 'Show less' : 'Read more' }}
+                  class="mini icon"
+                  @click="isLaneRunning(lane) ? stopTimer() : startLaneTimer(lane)"
+                  :title="isLaneRunning(lane) ? 'Stop timer' : 'Start timer'"
+                >
+                  {{ isLaneRunning(lane) ? '■' : '▶︎' }}
                 </button>
-              </section>
-            
-              <footer class="projcard__foot">
-                <div class="spacer"></div>
-                <div class="actions__icons">
-                  <button class="mini icon"
-                          @click="isLaneRunning(lane) ? stopTimer() : startLaneTimer(lane)"
-                          :title="isLaneRunning(lane) ? 'Stop timer' : 'Start timer'">
-                    {{ isLaneRunning(lane) ? '■' : '▶︎' }}
-                  </button>
-                  <button class="mini icon" @click="editLaneMeta(lane)" title="Edit project settings">⋯</button>
-                </div>
-              </footer>
-            </article>
-          </div>
+                <button
+                  class="mini icon"
+                  @click="editLaneMeta(lane)"
+                  title="Edit project settings"
+                >
+                  ⋯
+                </button>
+              </div>
+            </footer>
+          </article>
+        </div>
 
           <!-- Row header cell -->
           <!-- Day cells -->
@@ -956,10 +965,12 @@ watch([currentWeekStart, groupBy], () => { load() })
   border-bottom: 1px solid var(--border);
 }
 .board__sectiontitle {
-  margin: 8px 0 4px;
-  font-size: .95rem;
-  font-weight: 700;
-  color: var(--muted);
+  margin: 4px 6px 8px;
+  font-size: 0.9rem;                 /* smaller than the Logger brand */
+  font-weight: 650;
+  letter-spacing: 0.14em;            /* more "label-like" tracking */
+  text-transform: uppercase;
+  color: var(--muted);               /* keep it secondary to the brand */
 }
 .nav { display: flex; align-items: center; gap: 6px; }
 .nav button {
@@ -1000,15 +1011,24 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 .goal .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--primary), var(--accent)); }
 .goal span { color: var(--muted); font-weight: 700; }
 
-/* Scroller remains for very small viewports, but 7 cols fit at typical widths */
-.board__scroller { overflow: auto; padding-bottom: 8px; }
+.board__scroller {
+  margin-top: 6px;
+  padding: 10px 10px 14px;
+  background: var(--panel);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  overflow: auto;
+}
+
+/* Spreadsheet-style: fixed row header + minimum width per day */
 .grid {
-  --rowhead-w: 160px;
+  --rowhead-w: 170px;
   display: grid;
-  grid-template-columns: var(--rowhead-w) repeat(7, 1fr);
+  grid-template-columns: var(--rowhead-w) repeat(7, minmax(130px, 1fr));
   gap: 8px;
   align-items: start;
-  padding: 8px 0;
+  padding: 6px 0;
 }
 .cell {
   background: var(--panel);
@@ -1034,39 +1054,107 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
   box-shadow: none;
 }
 .cell--rowhead { position: sticky; left: 0; z-index: 5; background: var(--panel); border-right: 1px solid var(--border); }
+/* Row header cells: tighter padding so project cards sit comfortably */
+.cell--rowhead {
+  padding: 8px 6px 8px;
+  overflow: hidden;
+}
+
+
 .cell__empty { pointer-events: none; }
 .dayhead {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  padding: 8px 6px;
+  padding: 6px 6px;
   border-bottom: 1px solid var(--border);
   color: var(--muted);
-  font-weight: 700;
-  font-size: .92rem;
+  font-weight: 600;
+  font-size: .88rem;
+  white-space: nowrap;   /* keep all on one row */
+  gap: 6px;
 }
 
 .dayhead strong {
   letter-spacing: .01em;
+  font-weight: 600;
 }
 
 .dayhead small {
   font-weight: 600;
   opacity: .9;
+  font-size: .8rem;
+  flex-shrink: 0;
 }
-.lanehead { display: flex; align-items: baseline; justify-content: space-between; padding: 10px 8px; font-weight: 700; font-size: .95rem; }
-.lanehead__title { display: flex; align-items: center; gap: 6px; }
-.lanehead__right { display: flex; align-items: center; gap: 6px; }
-.lanehead__desc { color: var(--muted); font-size: .85rem; padding: 0 8px 8px; }
-/* Prevent rowhead contents from bleeding into the first day column */
-.cell--rowhead { overflow: hidden; }
-.lanehead { gap: 8px; }
-.lanehead__title { min-width: 0; }
-.lanehead__title strong {
-  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+
+
+/* Project row header cards in the weekly grid */
+.projcard {
+  display: grid;
+  grid-template-rows: auto auto auto; /* title, hours row, buttons */
+  align-content: space-between;
+  gap: 4px;
+  padding: 8px 8px 6px;
+  border-radius: calc(var(--radius) - 4px);
+  background: color-mix(in srgb, var(--panel-2) 75%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  box-shadow: var(--shadow-sm);
 }
-.lanehead__desc { overflow-wrap: anywhere; word-break: break-word; }
-.lanehead__right { flex-shrink: 0; }
+.projcard__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+.projcard__head .prio-dot {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+.projcard__head .title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.25;
+  /* allow wrapping, but clamp to 2 lines so row heights stay reasonable */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.projcard__hoursrow {
+  margin-top: 2px;
+}
+.projcard__hours-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.1rem 0.6rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--btn-blue-bg) 85%, transparent);
+  color: var(--muted);
+}
+
+.projcard__foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  margin-top: 4px;
+}
+.projcard__foot .spacer {
+  flex: 1 1 auto;
+}
+.projcard__foot .actions__icons {
+  display: inline-flex;
+  gap: 0.25rem;
+}
 
 .badge { font-size: .72rem; padding: .1rem .45rem; border-radius: 999px; border: 1px solid var(--border); }
 .badge.p-low { background: #eef6ff; color: #1e3a8a; }
@@ -1091,49 +1179,64 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
   overflow: hidden;
 }
 
-/* Weekly grid: compact entries should read like simple rows, not blobs */
+/* Weekly grid: make cells read like a spreadsheet */
 .cell .droplist {
   margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;               /* clearer separation between entries */
 }
 
+/* Inside the weekly grid, render compact cards as light pills so each entry is clearly distinct */
 .cell .droplist :deep(.tcard.compact) {
-  box-shadow: none;
-  background: var(--panel-2);
+  box-shadow: var(--shadow-sm);
+  background: color-mix(in srgb, var(--panel-2) 85%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   border-radius: 10px;
-  padding: .45rem .6rem;
+  padding: 6px 8px;
   min-height: auto;
 }
 
-/* In the weekly grid, hide the drag handle and tighten the header layout */
+/* In weekly grid, reflow compact header for 3 columns (times+label | hours | edit) */
 .cell .droplist :deep(.tcard__head--compact) {
-  grid-template-columns: 1fr auto auto; /* times | hours | edit */
-  column-gap: .35rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: .35rem;
+  padding: 0;
 }
 
+/* Hide drag handle in weekly view to keep the row clean */
 .cell .droplist :deep(.handle) {
-  display: none; /* no grip icon in weekly view */
+  display: none;
 }
 
-/* Make the time range crisp and readable */
+/* Let the times block use the full available width in each row */
 .cell .droplist :deep(.tcard__head--compact .times) {
-  font-size: .86rem;
-  font-weight: 650;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
 }
 
-/* Hours pill: smaller, more chip-like, not a big circle */
-.cell .droplist :deep(.hours-lg) {
-  font-size: .82rem;
-  padding: .06rem .4rem;
-  background: rgba(47, 143, 131, 0.12);
+/* In weekly grid, allow time range and label to wrap instead of truncating */
+.cell .droplist :deep(.times__range),
+.cell .droplist :deep(.times__label) {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.2;
 }
 
-/* Edit button in the grid: de-emphasized but still accessible */
+/* Slightly tone down font size in the grid so rows read cleanly */
+.cell .droplist :deep(.times__range) {
+  font-size: .8rem;
+}
+.cell .droplist :deep(.times__label) {
+  font-size: .75rem;
+}
+
+/* Edit icon: compact but still clickable */
 .cell .droplist :deep(.edit-compact) {
-  padding: .16rem .38rem;
+  padding: .12rem .3rem;
+  border-radius: 6px;
 }
 
 /* Drag classes for better feedback */
@@ -1276,4 +1379,73 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 .auth button { padding: .5rem .8rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
 .auth .hint { margin-top: .6rem; }
 .auth .link { background: transparent; border: none; color: var(--primary); cursor: pointer; padding: 0; }
+
+/* Project lane cards (row headers in the weekly grid) */
+.projcard {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 10px 10px 9px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--panel-2) 92%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+
+.projcard__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.projcard__head .title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 650;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projcard__hoursrow {
+  margin-top: 4px;
+}
+
+.projcard__hours-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.12rem 0.6rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--btn-blue-bg) 80%, transparent);
+  color: var(--muted);
+}
+
+.projcard__foot {
+  display: flex;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.projcard__foot .spacer {
+  flex: 1;
+}
+
+.projcard__foot .actions__icons {
+  display: flex;
+  gap: 6px;
+}
+
+.projcard__foot .mini.icon {
+  background: var(--btn-blue-bg);
+  border-color: var(--border);
+}
+
+.projcard__foot .mini.icon:hover {
+  background: var(--btn-blue-bg-hover);
+}
 </style>

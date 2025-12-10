@@ -163,23 +163,69 @@ function onStop(){ emit('stop', props.card) }
       <div class="hours" v-if="roundedDurationHours > 0">{{ fmtH(roundedDurationHours, 2) }} h</div>
     </header>
 
-    <!-- Compact header: show times + hours + quick edit; optimized for small weekly cells. -->
+    <!-- Compact header: show times + optional label + hours; optimized for small weekly cells. -->
     <header v-else class="tcard__head tcard__head--compact" @dblclick="editing = true">
       <span class="handle" title="Drag to reorder" aria-label="Drag handle">☰</span>
       <div class="times">
-        {{ new Date(card.start_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }}
-        →
-        <span v-if="!isRunning && card.end_utc">
-          {{ new Date(card.end_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }}
-        </span>
-        <span v-else>Now</span>
+        <!-- Project / lane label first (top line) -->
+        <div
+          v-if="card.jobTitle || card.projectCode || card.activity"
+          class="times__label"
+          :title="(card.jobTitle || card.projectCode || 'Untitled') + (card.activity ? ' — ' + card.activity : '')"
+        >
+          <span class="times__label-main">
+            {{ card.jobTitle || card.projectCode || 'Untitled' }}
+          </span>
+          <span v-if="card.activity" class="times__label-sep"> • </span>
+          <span v-if="card.activity" class="times__label-activity">
+            {{ card.activity }}
+          </span>
+        </div>
+      
+        <!-- Time range second (under the title) -->
+        <div class="times__range">
+          {{ new Date(card.start_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+          →
+          <span v-if="!isRunning && card.end_utc">
+            {{ new Date(card.end_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+          </span>
+          <span v-else>Now</span>
+        </div>
       </div>
       <div class="hours-lg">{{ fmtH(roundedDurationHours, 2) }} h</div>
-      <button class="icon edit-compact" title="Edit" aria-label="Edit" @click.stop="editing = true">✎</button>
+      <button
+        class="icon edit-compact"
+        title="Edit"
+        aria-label="Edit"
+        @click.stop="editing = true"
+      >
+        ✎
+      </button>
     </header>
 
     <!-- Compact weekly card body (only when not editing) -->
-    <section v-if="compact && !editing" class="tcard__body tcard__body--compact"></section>
+    <section v-if="compact && !editing" class="tcard__body tcard__body--compact">
+      <div
+        v-if="(card.priority && card.priority !== 'Normal') || card.notes"
+        class="mini-meta"
+      >
+        <span
+          v-if="card.priority && card.priority !== 'Normal'"
+          class="mini-meta__pri"
+          :class="'p-' + (card.priority || 'Normal').toLowerCase()"
+        >
+          {{ card.priority }}
+        </span>
+        <span
+          v-if="card.notes"
+          class="mini-meta__notes"
+          title="Has notes"
+          aria-label="Has notes"
+        >
+          📝
+        </span>
+      </div>
+    </section>
 
     <!-- Full card body (focus area) shown when not editing) -->
     <section v-else-if="!compact && !editing" class="tcard__body" @dblclick="editing = true">
@@ -281,10 +327,7 @@ function onStop(){ emit('stop', props.card) }
   .tcard__body { color: var(--text, #374151); min-height: 52px; overflow: hidden; }
   .tcard__body--compact { overflow: hidden; } /* weekly grid variant */
   .tcard__body p { margin: .25rem 0; word-break: break-word; overflow-wrap: anywhere; }
-  .tcard .desc,
-  .tcard .notes { display: none !important; }
-  .tcard__body--compact .desc,
-  .tcard__body--compact .notes { display: none; }
+  
   .tcard__head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .6rem; }
   .handle { cursor: grab; user-select: none; font-size: 1rem; line-height: 1; opacity: .7; }
   .tcard__title { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
@@ -302,16 +345,11 @@ function onStop(){ emit('stop', props.card) }
   .prio-dot.p-critical { background: #fca5a5; border-color: #fca5a5; }
   
   /* description clamp */
-  .desc.clamped { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .link.more { background: transparent; border: none; color: var(--primary, #5b8cff); padding: 0; cursor: pointer; }
   
   /* footer actions */
   .tcard__foot { display: flex; justify-content: flex-end; gap: .35rem; margin-top: 0; align-self: end;}
-  .prio { font-size: .75rem; padding: .15rem .45rem; border-radius: 999px; border: 1px solid var(--border, #e5e7eb); }
-  .prio.p-low { background: #eef6ff; color: #1e3a8a; }
-  .prio.p-normal { background: #eef2ff; color: #3730a3; }
-  .prio.p-high { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
-  .prio.p-critical { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
+  
   .icon { border: 1px solid var(--border, #e5e7eb); border-radius: 8px; background: var(--panel-2, #f3f4f6); cursor: pointer; padding: .25rem .45rem; line-height: 1; }
   .icon:hover { background: #e9eef7; }
   .hint{ align-self:center; color:var(--muted); font-size:.85rem; margin-left:.25rem; }
@@ -369,51 +407,99 @@ function onStop(){ emit('stop', props.card) }
   button.danger { border-color: #ef4444; color: #b91c1c; }
   .actions__icons { display: flex; gap: .35rem; }
   /* --- Compact variant for weekly grid --- */
-  .tcard.compact {
-    padding: .4rem .55rem;
-    min-height: 72px;
-    grid-template-rows: auto;
-    align-content: center;
-  }
-  .tcard__head--compact {
-    display: grid;
-    grid-template-columns: auto 1fr auto auto; /* handle | times | hours | edit */
-    align-items: center;
-    gap: .3rem;
-  }
-  .tcard__head--compact .times {
-    font-size: .86rem;
-    color: #111827;
-    font-weight: 650;
-    white-space: nowrap;
+/* --- Compact variant (used by weekly grid and simple layout) --- */
+.tcard.compact {
+  padding: .5rem .6rem .7rem .6rem;
+  min-height: 64px;
+  grid-template-rows: auto;
+  align-content: flex-start;
+  position: relative;
+}
+
+.tcard__head--compact {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto; /* handle | title+times | edit */
+  align-items: center;
+  gap: .35rem;
+}
+
+.tcard__head--compact .times {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.times__range {
+  font-size: .84rem;
+  font-weight: 600;
+  color: var(--text, #111827);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:global([data-theme="dark"]) .times__range {
+  color: #e5f3f0;
+}
+
+  .times__label {
+    font-size: .75rem;
+    color: var(--muted, #6b7280);
+    line-height: 1.1;
     overflow: hidden;
     text-overflow: ellipsis;
-    line-height: 1.1;
+    white-space: nowrap;
   }
-  :global([data-theme="dark"]) .tcard__head--compact .times {
-    color: #e5f3f0;
+  .times__label-main {
+    font-weight: 500;
   }
-  .tcard__head--compact .edit-compact { border-radius: 8px; padding: .2rem .4rem; }
-  .hours-lg {
-    font-weight: 700;
-    font-size: .86rem;
-    padding: .08rem .4rem;
-    border-radius: 999px;
-    background: rgba(47, 143, 131, 0.08);
+  .times__label-sep {
+    opacity: .65;
+    padding: 0 .12rem;
   }
-  .tcard.compact .handle,
-  .tcard.compact .tcard__title,
-  .tcard.compact .meta,
-  .tcard__body--compact .desc,
-  .tcard__body--compact .notes { display: none !important; }
-  .tcard.compact .tcard__foot { display: none; }
-  
-  .mini-details { border-top: 1px dashed var(--border); padding-top: .35rem; }
-  .mini-details summary { cursor: pointer; color: var(--primary); list-style: none; }
-  .mini-details summary::-webkit-details-marker { display: none; }
-  
-  /* legacy: hide any old text priority pill if present */
-  .tcard .prio { display: none !important; }
+  .times__label-activity {
+    color: var(--muted, #6b7280);
+  }
+
+.tcard__head--compact .edit-compact {
+  border-radius: 8px;
+  padding: .2rem .4rem;
+}
+
+.hours-lg {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.25rem;
+  font-weight: 600;
+  font-size: .8rem;
+  padding: .12rem .55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary, #5b8cff) 8%, transparent);
+  color: var(--text, #111827);
+}
+
+.tcard.compact .hours-lg {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+}
+
+:global([data-theme="dark"]) .hours-lg {
+  background: rgba(127, 209, 195, 0.16);
+  color: #e5f3f0;
+}
+
+.tcard.compact .handle,
+.tcard.compact .tcard__title,
+.tcard.compact .meta,
+.tcard__body--compact .desc,
+.tcard__body--compact .notes { display: none !important; }
+
+.tcard.compact .tcard__foot { display: none; }
   
   /* When a compact card is editing, stack Start/End vertically to avoid overflow */
   .tcard.compact.editing .tcard__edit .row { grid-template-columns: 1fr; }
@@ -429,5 +515,41 @@ function onStop(){ emit('stop', props.card) }
     padding: .3rem .45rem;
   }
   
-  
+  .mini-meta {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 2px;
+    font-size: .72rem;
+    color: var(--muted, #6b7280);
+  }
+  .mini-meta__pri {
+    padding: .05rem .35rem;
+    border-radius: 999px;
+    border: 1px solid var(--border, #d1d5db);
+    font-weight: 600;
+  }
+  .mini-meta__pri.p-low {
+    background: #eef6ff;
+    color: #1e3a8a;
+    border-color: #bfdbfe;
+  }
+  .mini-meta__pri.p-normal {
+    background: #eef2ff;
+    color: #3730a3;
+    border-color: #c7d2fe;
+  }
+  .mini-meta__pri.p-high {
+    background: #fff7ed;
+    color: #9a3412;
+    border-color: #fed7aa;
+  }
+  .mini-meta__pri.p-critical {
+    background: #fef2f2;
+    color: #991b1b;
+    border-color: #fecaca;
+  }
+  .mini-meta__notes {
+    font-size: .8rem;
+  }
 </style>

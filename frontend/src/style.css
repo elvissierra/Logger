@@ -1,23 +1,11 @@
-
 :root {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  color-scheme: light;
 }
 
 * {
   box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  min-height: 100vh;
-  background: var(--bg, #f7f9f8);
-  color: var(--text, #0c1b1b);
 }
 
 a {
@@ -27,8 +15,4 @@ a {
 
 button {
   font-family: inherit;
-}
-
-#app {
-  min-height: 100vh;
 }
