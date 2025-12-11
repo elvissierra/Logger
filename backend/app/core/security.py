@@ -36,6 +36,17 @@ REFRESH_TOKEN_DAYS = int(os.getenv("REFRESH_TOKEN_DAYS", "14"))
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "0") == "1"
 COOKIE_DOMAIN = os.getenv("COOKIE_DOMAIN") or None
 
+# Determine SameSite mode for cookies (configurable, defaults by environment)
+_COOKIE_SAMESITE_ENV = os.getenv("COOKIE_SAMESITE")
+if _COOKIE_SAMESITE_ENV:
+    _samesite = _COOKIE_SAMESITE_ENV.strip().lower()
+    if _samesite not in ("lax", "none", "strict"):
+        _samesite = "lax"
+    COOKIE_SAMESITE = _samesite
+else:
+    # If secure, default to 'none' (for cross-site); else 'lax'
+    COOKIE_SAMESITE = "none" if COOKIE_SECURE else "lax"
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
@@ -88,9 +99,9 @@ def decode_token(token: str) -> dict:
 def set_auth_cookies(resp, access: str, refresh: str, csrf: str):
     """
     Set httpOnly access/refresh cookies and a readable csrf_token for SPA requests.
-    SameSite=Lax is dev-friendly; for cross-site embeds, switch to SameSite=None and secure cookies over HTTPS.
+    SameSite is configurable; for cross-site embeds, use SameSite=None and secure cookies over HTTPS.
     """
-    common = dict(samesite="lax", secure=COOKIE_SECURE, domain=COOKIE_DOMAIN)
+    common = dict(samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE, domain=COOKIE_DOMAIN)
     resp.set_cookie("access_token", access, httponly=True, **common)
     resp.set_cookie("refresh_token", refresh, httponly=True, **common)
     # readable CSRF token for SPA (double-submit)
@@ -99,7 +110,7 @@ def set_auth_cookies(resp, access: str, refresh: str, csrf: str):
 
 def clear_auth_cookies(resp):
     for name in ("access_token", "refresh_token", "csrf_token"):
-        resp.delete_cookie(name, domain=COOKIE_DOMAIN, samesite="lax")
+        resp.delete_cookie(name, domain=COOKIE_DOMAIN, samesite=COOKIE_SAMESITE)
 
 
 def require_csrf(request: Request):
