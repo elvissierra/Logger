@@ -38,6 +38,7 @@ from app.crud.time_entries import (
     update_entry as crud_update_entry,
     delete_entry as crud_delete_entry,
     has_overlap as crud_has_overlap,
+    get_running_entry as crud_get_running_entry,
 )
 from app.crud.projects import upsert_by_code
 from app.schemas.project import ProjectCreate
@@ -79,24 +80,31 @@ def api_create_entry(
     user=Depends(_verify_and_get_user_from_access),
 ):
     require_csrf(request)
-    if payload.end_utc <= payload.start_utc:
-        raise HTTPException(
-            status_code=400, detail="end_utc must be greater than start_utc"
-        )
-    if crud_has_overlap(
-        db, user_id=user.id, start_utc=payload.start_utc, end_utc=payload.end_utc
-    ):
-        raise HTTPException(status_code=409, detail="Overlapping time entry for user")
+
     # Force server-side ownership to the authenticated user
-    payload2 = TimeEntryCreate(**{**payload.dict(), "user_id": user.id})
-    # ensure project exists for this user
+    payload2 = TimeEntryCreate(**{**payload.model_dump(), "user_id": user.id})
+
+    # Validation: only enforce end > start when an end is provided (stopped entries)
+    if payload2.end_utc is not None and payload2.end_utc <= payload2.start_utc:
+        raise HTTPException(status_code=400, detail="end_utc must be greater than start_utc")
+
+    # Rule A3: only one running entry per user at a time
+    if payload2.end_utc is None:
+        running = crud_get_running_entry(db, user_id=user.id)
+        if running is not None:
+            raise HTTPException(status_code=409, detail="A timer is already running")
+
+    # Overlap checks only apply to closed intervals
+    if payload2.end_utc is not None:
+        if crud_has_overlap(db, user_id=user.id, start_utc=payload2.start_utc, end_utc=payload2.end_utc):
+            raise HTTPException(status_code=409, detail="Overlapping time entry for user")
+
+    # Ensure project exists for this user (best-effort)
     try:
-        upsert_by_code(
-            db, user_id=user.id, payload=ProjectCreate(code=payload.project_code)
-        )
+        upsert_by_code(db, user_id=user.id, payload=ProjectCreate(code=payload2.project_code))
     except Exception:
         pass
-    return crud_create_entry(db, payload2)
+
     return crud_create_entry(db, payload2)
 
 
@@ -130,21 +138,34 @@ def api_update_entry(
     require_csrf(request)
     if entry.user_id != user.id:
         raise HTTPException(status_code=403, detail="Forbidden")
-    # Derive final times for validation
-    new_start = payload.start_utc or entry.start_utc
-    new_end = payload.end_utc or entry.end_utc
-    if new_end <= new_start:
-        raise HTTPException(
-            status_code=400, detail="end_utc must be greater than start_utc"
-        )
-    if crud_has_overlap(
-        db,
-        user_id=entry.user_id,
-        start_utc=new_start,
-        end_utc=new_end,
-        exclude_id=entry.id,
-    ):
-        raise HTTPException(status_code=409, detail="Overlapping time entry for user")
+
+    # Merge PATCH semantics correctly (unset vs explicit null)
+    data = payload.model_dump(exclude_unset=True)
+    new_start = data.get("start_utc", entry.start_utc)
+    # If the client provided end_utc explicitly (even if null), respect it; otherwise keep existing.
+    new_end = data.get("end_utc", entry.end_utc)
+
+    # Validate only when end exists
+    if new_end is not None and new_end <= new_start:
+        raise HTTPException(status_code=400, detail="end_utc must be greater than start_utc")
+
+    # If patch would make this entry running, enforce "one running entry" rule
+    if new_end is None:
+        running = crud_get_running_entry(db, user_id=entry.user_id, exclude_id=entry.id)
+        if running is not None:
+            raise HTTPException(status_code=409, detail="A timer is already running")
+
+    # Overlap check only for closed intervals
+    if new_end is not None:
+        if crud_has_overlap(
+            db,
+            user_id=entry.user_id,
+            start_utc=new_start,
+            end_utc=new_end,
+            exclude_id=entry.id,
+        ):
+            raise HTTPException(status_code=409, detail="Overlapping time entry for user")
+
     try:
         if payload.project_code:
             upsert_by_code(

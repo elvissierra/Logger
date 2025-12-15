@@ -39,7 +39,7 @@ class TimeEntry(Base):
     project_code = Column(String, nullable=False)
     # activity kept as a simple label for now; can evolve to a normalized table later.
     activity = Column(String, nullable=False)
-
+    job_title = Column(String, nullable=True)
     start_utc = Column(TIMESTAMP(timezone=True), nullable=False)
     # allow running entries to have no end yet; API computes/stores seconds when ended
     end_utc = Column(TIMESTAMP(timezone=True), nullable=True)
