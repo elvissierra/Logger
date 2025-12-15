@@ -200,7 +200,10 @@ function parsePriorityAndCleanNotes(notes) {
   }
   return { priority: 'Normal', notes }
 }
-function laneMetaStorageKey(laneKey) { return `logger.laneMeta:${groupBy.value}:${laneKey}` }
+function laneMetaStorageKey(laneKey) {
+  const uid = currentUserId() || 'anon'
+  return `logger.laneMeta:${uid}:${groupBy.value}:${laneKey}`
+}
 function getLaneMeta(laneKey) {
   try { return JSON.parse(localStorage.getItem(laneMetaStorageKey(laneKey)) || '{}') } catch { return {} }
 }
@@ -409,7 +412,10 @@ function applyLocalOrder() {
     }
   }
 }
-function customLanesKey() { return `logger.customLanes:${groupBy.value}` }
+function customLanesKey() {
+  const uid = currentUserId() || 'anon'
+  return `logger.customLanes:${uid}:${groupBy.value}`
+}
 function loadCustomLanes() {
   try { return JSON.parse(localStorage.getItem(customLanesKey()) || '[]') } catch { return [] }
 }
