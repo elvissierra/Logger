@@ -98,7 +98,6 @@ function setRunningId (id) {
   if (id) localStorage.setItem(rk, id)
   else localStorage.removeItem(rk)
 }
-let _extendHandle = null
 async function stopRunningIfAny () {
   if (!runningId.value) return null
   const id = runningId.value
@@ -112,44 +111,35 @@ async function stopRunningIfAny () {
   } catch (e) {
     notify(`Failed to stop timer: ${e?.message || e}`, 'error')
   } finally {
-    if (_extendHandle) { clearInterval(_extendHandle); _extendHandle = null }
     setRunningId(null)
   }
   await load()
   return id
 }
-// Start a timer: stop any existing one, create a new entry with start_utc=now and a provisional end_utc (+1min),
-// then extend end_utc every 30s while running. (This keeps duration visible even if the tab sleeps.)
+// Start a timer: stop any existing one, create a new *running* entry (end_utc=null).
 async function startTimer (seedCard) {
   await stopRunningIfAny()
   const now = new Date()
-  const inOneMin = new Date(now.getTime() + 60 * 1000)
   const payload = {
-    // user_id: userId,
     project_code: seedCard.project_code || seedCard.projectCode || '',
     activity: seedCard.activity || '',
+    job_title: seedCard.job_title || seedCard.jobTitle || null,
     start_utc: now.toISOString(),
-    end_utc: inOneMin.toISOString(),
+    end_utc: null,
     notes: `[prio:${(seedCard.priority || 'Normal').toLowerCase()}]` + (seedCard.notes ? ` ${seedCard.notes}` : '')
   }
-const res = await apiFetch(`${API_BASE}/api/time-entries/`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
-  body: JSON.stringify(payload)
-})
-// ...
-const created = await res.json()
-setRunningId(created.id)
 
-_extendHandle = setInterval(async () => {
-  try {
-    await apiFetch(`${API_BASE}/api/time-entries/${created.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
-      body: JSON.stringify({ end_utc: new Date().toISOString() })
-    })
-  } catch {}
-}, 30000)
+  const res = await apiFetch(`${API_BASE}/api/time-entries/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
+    body: JSON.stringify(payload)
+  })
+  if (!res.ok) {
+    return notify(`Failed to start timer: ${await res.text()}`, 'error')
+  }
+
+  const created = await res.json()
+  setRunningId(created.id)
   await load()
   notify('Timer started', 'success')
 }
@@ -310,7 +300,7 @@ function mapEntryToCard(e) {
   const parsed = parsePriorityAndCleanNotes(e.notes || '')
   return {
     id: e.id,
-    jobTitle: e.project_code,
+    jobTitle: e.job_title || '',
     projectCode: e.project_code,
     activity: e.activity,
     description: '',
@@ -339,27 +329,27 @@ function assignCardsToGrid(entries) {
   }
 
   for (const e of entries) {
-    const k = groupBy.value === 'project_code' ? (e.project_code || 'Ungrouped') : (e.activity || 'Ungrouped')
+    const k = groupBy.value === 'project_code' ? (e.project_code || '') : (e.activity || '')
+    if (!k) continue
     const lane = ensureLane(k, k)
     const day = laneKeyFromISO(e.start_utc)
     const col = lane.columns.find(c => c.dayKey === day)
     if (col) col.cards.push(mapEntryToCard(e))
   }
 
-const customs = loadCustomLanes()
-// Ensure all custom lanes exist (even if no entries yet)
-for (const name of customs) {
-  if (!lanesMap.has(name)) lanesMap.set(name, buildEmptySwimlane(name, name))
-}
-// Order: custom lanes first (by saved order), then the rest
-const ordered = []
-for (const name of customs) ordered.push(lanesMap.get(name))
-for (const [k, v] of lanesMap) if (!customs.includes(k)) ordered.push(v)
-if (!ordered.length) ordered.push(buildEmptySwimlane('Ungrouped', 'Ungrouped'))
+  const customs = loadCustomLanes()
+  // Ensure all custom lanes exist (even if no entries yet)
+  for (const name of customs) {
+    if (!lanesMap.has(name)) lanesMap.set(name, buildEmptySwimlane(name, name))
+  }
+  // Order: custom lanes first (by saved order), then the rest
+  const ordered = []
+  for (const name of customs) ordered.push(lanesMap.get(name))
+  for (const [k, v] of lanesMap) if (!customs.includes(k)) ordered.push(v)
+  // No fallback Ungrouped lane
 
-
-swimlanes.value = ordered
-applyLocalOrder()
+  swimlanes.value = ordered
+  applyLocalOrder()
 }
 
 // Load the current week’s entries from the server. We request [Mon..Mon+7) and then map into the grid.
@@ -443,8 +433,9 @@ async function saveCard(payload) {
       body: JSON.stringify({
         project_code: payload.project_code || payload.projectCode,
         activity: payload.activity,
+        job_title: payload.job_title ?? payload.jobTitle ?? null,
         start_utc: payload.start_utc,
-        end_utc: payload.end_utc,
+        end_utc: payload.end_utc ? payload.end_utc : null,
         notes: `[prio:${(payload.priority || 'Normal').toLowerCase()}]` + (payload.notes ? ` ${payload.notes}` : '')
       })
     })
@@ -454,11 +445,11 @@ async function saveCard(payload) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
       body: JSON.stringify({
-        // user_id: userId,
         project_code: payload.project_code || payload.projectCode,
         activity: payload.activity,
+        job_title: payload.job_title ?? payload.jobTitle ?? null,
         start_utc: payload.start_utc,
-        end_utc: payload.end_utc,
+        end_utc: payload.end_utc ? payload.end_utc : null,
         notes: `[prio:${(payload.priority || 'Normal').toLowerCase()}]` + (payload.notes ? ` ${payload.notes}` : '')
       })
     })
