@@ -56,8 +56,13 @@ def get_entry(db: Session, entry_id: str) -> Optional[TimeEntry]:
     return db.get(TimeEntry, entry_id)
 
 
-def _compute_seconds(start_utc: datetime, end_utc: datetime) -> int:
-    """Pure function for duration; guards against negative intervals (clock skew / bad input)."""
+def _compute_seconds(start_utc: datetime, end_utc: Optional[datetime]) -> int:
+    """Pure function for duration.
+
+    Running entries have end_utc=None; for those we materialize 0 seconds and let the UI compute live duration.
+    """
+    if end_utc is None:
+        return 0
     return max(0, int((end_utc - start_utc).total_seconds()))
 
 
@@ -66,15 +71,20 @@ def has_overlap(
     *,
     user_id: str,
     start_utc: datetime,
-    end_utc: datetime,
+    end_utc: Optional[datetime],
     exclude_id: Optional[str] = None,
 ) -> bool:
-    """
-    True if another entry for the same user overlaps the given interval.
+    """True if another *ended* entry for the same user overlaps the given closed interval.
+
+    We intentionally ignore running entries (end_utc is NULL) here and only use this check when end_utc is provided.
     Overlap test: existing.end > start AND existing.start < end (half-open interval semantics).
-    Used to prevent double-booking when creating or updating entries.
     """
+    if end_utc is None:
+        return False
+
     q = db.query(TimeEntry).filter(TimeEntry.user_id == user_id)
+    # Only compare against ended entries; running entries are handled by the "one running entry" rule.
+    q = q.filter(TimeEntry.end_utc.isnot(None))
     q = q.filter(TimeEntry.end_utc > start_utc, TimeEntry.start_utc < end_utc)
     if exclude_id:
         q = q.filter(TimeEntry.id != exclude_id)
@@ -87,6 +97,7 @@ def create_entry(db: Session, payload: TimeEntryCreate) -> TimeEntry:
     obj = TimeEntry(
         org_id=None,
         user_id=payload.user_id,
+        job_title=payload.job_title,
         project_code=payload.project_code,
         activity=payload.activity,
         start_utc=payload.start_utc,
@@ -102,7 +113,7 @@ def create_entry(db: Session, payload: TimeEntryCreate) -> TimeEntry:
 
 def update_entry(db: Session, entry: TimeEntry, payload: TimeEntryUpdate) -> TimeEntry:
     """Patch entry fields and recompute seconds when start/end change; persists and refreshes in one transaction."""
-    data = payload.dict(exclude_unset=True)
+    data = payload.model_dump(exclude_unset=True)
     for k, v in data.items():
         setattr(entry, k, v)
     # recompute seconds if times were touched
@@ -116,3 +127,16 @@ def update_entry(db: Session, entry: TimeEntry, payload: TimeEntryUpdate) -> Tim
 def delete_entry(db: Session, entry: TimeEntry) -> None:
     db.delete(entry)
     db.commit()
+
+
+def get_running_entry(
+    db: Session,
+    *,
+    user_id: str,
+    exclude_id: Optional[str] = None,
+) -> Optional[TimeEntry]:
+    """Return the user's currently running entry (end_utc is NULL), if any."""
+    q = db.query(TimeEntry).filter(TimeEntry.user_id == user_id, TimeEntry.end_utc.is_(None))
+    if exclude_id:
+        q = q.filter(TimeEntry.id != exclude_id)
+    return q.order_by(TimeEntry.start_utc.desc()).first()
