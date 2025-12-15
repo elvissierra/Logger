@@ -124,15 +124,21 @@ watch(showAdvanced, async (open) => {
 })
 
 function onSave() {
+  const startIso = fromLocalInput(local.value.start_local || toLocalInput(local.value.start_utc))
+  const endIso = local.value.end_local
+    ? fromLocalInput(local.value.end_local)
+    : (local.value.end_utc ? fromLocalInput(toLocalInput(local.value.end_utc)) : null)
+
   const payload = {
     ...local.value,
     // map UI -> API fields
     project_code: local.value.projectCode,
     activity: local.value.activity,
+    job_title: local.value.jobTitle || null,
     priority: local.value.priority || 'Normal',
     notes: [local.value.description, local.value.notes].filter(Boolean).join('\n'),
-    start_utc: fromLocalInput(local.value.start_local || toLocalInput(local.value.start_utc)),
-    end_utc: fromLocalInput(local.value.end_local || toLocalInput(local.value.end_utc)),
+    start_utc: startIso,
+    end_utc: endIso,
   }
   emit('save', payload)
   editing.value = false

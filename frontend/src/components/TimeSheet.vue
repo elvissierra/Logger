@@ -11,6 +11,10 @@
           <input v-model="form.project_code" placeholder="PJ-001" required />
         </label>
         <label>
+          Job Title
+          <input v-model="form.job_title" placeholder="Bridge Inspection" />
+        </label>
+        <label>
           Activity
           <input v-model="form.activity" placeholder="Paperwork" required />
         </label>
@@ -20,7 +24,7 @@
         </label>
         <label>
           End (UTC ISO)
-          <input v-model="form.end_utc" placeholder="2025-08-29T16:30:00Z" required />
+          <input v-model="form.end_utc" placeholder="2025-08-29T16:30:00Z" />
         </label>
         <label>
           Notes
@@ -66,6 +70,7 @@ import { API_BASE, apiFetch, getCsrf } from '../lib/api'
 const entries = ref([])
 const form = reactive({
   project_code: 'PJ-001',
+  job_title: '',
   activity: 'Paperwork',
   start_utc: '',
   end_utc: '',
@@ -81,11 +86,12 @@ async function create () {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
     body: JSON.stringify({
-    project_code: form.project_code,
-    activity: form.activity,
-    start_utc: form.start_utc,
-    end_utc: form.end_utc,
-    notes: form.notes
+      project_code: form.project_code,
+      job_title: form.job_title || null,
+      activity: form.activity,
+      start_utc: form.start_utc,
+      end_utc: form.end_utc ? form.end_utc : null,
+      notes: form.notes
     })
   })
   if (!res.ok) {
@@ -93,7 +99,7 @@ async function create () {
     alert(`Failed to create: ${msg}`)
     return
   }
-  Object.assign(form, { start_utc: '', end_utc: '', notes: '' })
+  Object.assign(form, { job_title: '', start_utc: '', end_utc: '', notes: '' })
   await load()
 }
 async function remove (id) {
