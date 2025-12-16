@@ -29,12 +29,7 @@ from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 
-
 APP_NAME = os.getenv("APP_NAME", "Logger API")
-
-# Single environment switch: local/dev vs production
-APP_ENV = os.getenv("APP_ENV", "local").strip().lower()
-IS_PROD = APP_ENV in ("prod", "production")
 
 
 # Parse BACKEND_CORS_ORIGINS from CSV or JSON array to a normalized list
@@ -72,18 +67,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Enforce HTTPS / trusted hosts only in production (controlled by APP_ENV).
-# You can still override FORCE_HTTPS/TRUSTED_HOSTS explicitly in production.
-_force_https = os.getenv("FORCE_HTTPS")
-if _force_https is None or _force_https == "":
-    _force_https = "1" if IS_PROD else "0"
-
-if _force_https == "1" and IS_PROD:
+# Enforce HTTPS and trusted hosts in production
+if os.getenv("FORCE_HTTPS", "0") == "1":
     app.add_middleware(HTTPSRedirectMiddleware)
-
 trusted_hosts = os.getenv("TRUSTED_HOSTS", "").split(",")
 trusted_hosts = [h.strip() for h in trusted_hosts if h.strip()]
-if IS_PROD and trusted_hosts:
+if trusted_hosts:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)
 
 log = logging.getLogger("uvicorn.error")
@@ -102,14 +91,13 @@ async def log_404s(request: Request, call_next):
     return resp
 
 
-# Dev convenience: create tables locally; production schema changes must be handled via Alembic.
+# Dev convenience: create tables for SQLite; Postgres ignores create_all if tables already exist
 @app.on_event("startup")
 def _startup():
-    if not IS_PROD:
-        Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
 
 
-log.info(f"[startup] env={APP_ENV} {APP_NAME} booted; CORS={BACKEND_CORS_ORIGINS}")
+log.info(f"[startup] {APP_NAME} booted; CORS={BACKEND_CORS_ORIGINS}")
 
 # Mount routers under /api/* paths
 app.include_router(
