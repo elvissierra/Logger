@@ -100,10 +100,11 @@ function toLocalInput(iso) {
 // Convert local datetime string -> ISO (UTC), rounding to nearest 15 minutes to match the app’s granularity.
 function fromLocalInput(localStr) {
   if (!localStr) return ''
-  const d = new Date(localStr) // local time
+  const d = new Date(localStr) // interpreted as local time
   const ms = 15 * 60 * 1000
   const roundedLocal = new Date(Math.round(d.getTime() / ms) * ms)
-  return new Date(roundedLocal.getTime() - roundedLocal.getTimezoneOffset() * 60000).toISOString()
+  // Browser already converted local time to the right UTC instant; just emit ISO
+  return roundedLocal.toISOString()
 }
 
 // Live duration: when running, use nowTick; otherwise use end_utc (or 0 if missing).
@@ -124,6 +125,11 @@ watch(showAdvanced, async (open) => {
 })
 
 function onSave() {
+  const title = (local.value.jobTitle || '').trim()
+  if (!title) {
+    window.alert('Please enter Title')
+    return
+  }
   const startIso = fromLocalInput(local.value.start_local || toLocalInput(local.value.start_utc))
   const endIso = local.value.end_local
     ? fromLocalInput(local.value.end_local)
@@ -151,7 +157,7 @@ function onStop(){ emit('stop', props.card) }
 <template>
   <article
     class="tcard"
-    :class="{ editing, compact }"
+    :class="[{ editing, compact }, 'prio-' + String(card.priority || 'Normal').toLowerCase()]"
     :style="(compact && !editing)
         ? { minHeight: ((heightPx || 56)) + 'px' }
         : {}"
@@ -169,7 +175,7 @@ function onStop(){ emit('stop', props.card) }
       <div class="hours" v-if="roundedDurationHours > 0">{{ fmtH(roundedDurationHours, 2) }} h</div>
     </header>
 
-    <!-- Compact header: show times + optional label + hours; optimized for small weekly cells. -->
+    <!-- Compact header: show times + optional label; optimized for small weekly cells. -->
     <header v-else class="tcard__head tcard__head--compact" @dblclick="editing = true">
       <span class="handle" title="Drag to reorder" aria-label="Drag handle">☰</span>
       <div class="times">
@@ -187,18 +193,20 @@ function onStop(){ emit('stop', props.card) }
             {{ card.activity }}
           </span>
         </div>
-      
-        <!-- Time range second (under the title) -->
+
+        <!-- Time range second (stacked start/end for strict separation) -->
         <div class="times__range">
-          {{ new Date(card.start_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
-          →
-          <span v-if="!isRunning && card.end_utc">
-            {{ new Date(card.end_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
-          </span>
-          <span v-else>Now</span>
+          <div class="times__row times__row--start">
+            {{ new Date(card.start_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+          </div>
+          <div class="times__row times__row--end">
+            <span v-if="!isRunning && card.end_utc">
+              {{ new Date(card.end_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+            </span>
+            <span v-else>Now</span>
+          </div>
         </div>
       </div>
-      <div class="hours-lg">{{ fmtH(roundedDurationHours, 2) }} h</div>
       <button
         class="icon edit-compact"
         title="Edit"
@@ -211,10 +219,7 @@ function onStop(){ emit('stop', props.card) }
 
     <!-- Compact weekly card body (only when not editing) -->
     <section v-if="compact && !editing" class="tcard__body tcard__body--compact">
-      <div
-        v-if="(card.priority && card.priority !== 'Normal') || card.notes"
-        class="mini-meta"
-      >
+      <div class="mini-meta-row">
         <span
           v-if="card.priority && card.priority !== 'Normal'"
           class="mini-meta__pri"
@@ -222,13 +227,8 @@ function onStop(){ emit('stop', props.card) }
         >
           {{ card.priority }}
         </span>
-        <span
-          v-if="card.notes"
-          class="mini-meta__notes"
-          title="Has notes"
-          aria-label="Has notes"
-        >
-          📝
+        <span class="hours-lg">
+          {{ fmtH(roundedDurationHours, 2) }} h
         </span>
       </div>
     </section>
@@ -327,11 +327,69 @@ function onStop(){ emit('stop', props.card) }
     overflow: hidden;
     min-height: 112px;
     color: var(--text, #111827);
+    position: relative;
   }
   .tcard:hover { box-shadow: var(--shadow-md, 0 6px 16px rgba(0,0,0,.08)); border-color: color-mix(in srgb, var(--border, #e5e7eb) 70%, var(--primary, #5b8cff) 30%); }
-  .tcard.editing { background: var(--panel, #7282c2); }
+  
   .tcard__body { color: var(--text, #374151); min-height: 52px; overflow: hidden; }
-  .tcard__body--compact { overflow: hidden; } /* weekly grid variant */
+/* Folder tab on compact cards – wide, rounded strip */
+.tcard.compact::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: 10px;
+  width: 78%;
+  height: 13px;
+  border-radius: 10px 10px 0 0;
+  background: color-mix(in srgb, var(--primary, #5b8cff) 22%, transparent);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+  opacity: 0.96;
+}
+
+/* Priority colors for the tab */
+.tcard.compact.prio-low::before {
+  background: #93c5fd;
+}
+.tcard.compact.prio-normal::before {
+  background: #a5b4fc;
+}
+.tcard.compact.prio-high::before {
+  background: #fdba74;
+}
+.tcard.compact.prio-critical::before {
+  background: #fca5a5;
+}
+
+/* Expand compact cards on hover */
+.tcard.compact:hover {
+  max-height: 168px;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md, 0 8px 24px rgba(0,0,0,.08));
+}
+
+/* Compact body is hidden until hover */
+.tcard__body--compact {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height .15s ease, opacity .15s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.mini-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.tcard.compact:hover .tcard__body--compact {
+  max-height: 80px;
+  opacity: 1;
+}
   .tcard__body p { margin: .25rem 0; word-break: break-word; overflow-wrap: anywhere; }
   
   .tcard__head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .6rem; }
@@ -342,7 +400,10 @@ function onStop(){ emit('stop', props.card) }
   .tcard__title { gap: .45rem; }
   .tcard__title .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hours { font-weight: 600; opacity: .9; }
-  .tcard.editing { overflow: visible; }
+  .tcard.editing { 
+    background: var(--panel, #7282c2);
+    overflow: visible; 
+  }
   /* color-only priority dot */
   .prio-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; border: 1px solid var(--border, #e5e7eb); }
   .prio-dot.p-low { background: #93c5fd; border-color: #93c5fd; }
@@ -412,14 +473,23 @@ function onStop(){ emit('stop', props.card) }
   button.primary { background: linear-gradient(180deg, var(--primary, #5b8cff), var(--primary-600, #3e6dff)); border-color: color-mix(in srgb, var(--border, #d1d5db) 40%, var(--primary, #5b8cff) 60%); color: #fff; }
   button.danger { border-color: #ef4444; color: #b91c1c; }
   .actions__icons { display: flex; gap: .35rem; }
-  /* --- Compact variant for weekly grid --- */
-/* --- Compact variant (used by weekly grid and simple layout) --- */
+  
 .tcard.compact {
-  padding: .5rem .6rem .7rem .6rem;
-  min-height: 64px;
+  padding: .8rem .6rem .7rem .6rem;
+  min-height: 48px;
   grid-template-rows: auto;
   align-content: flex-start;
   position: relative;
+  max-height: 68px;
+  overflow: hidden;
+  transition:
+    max-height .15s ease,
+    transform .12s ease,
+    box-shadow .12s ease;
+}
+
+.tcard.compact.editing {
+  max-height: none; /* allow full height while editing */
 }
 
 .tcard__head--compact {
@@ -442,6 +512,12 @@ function onStop(){ emit('stop', props.card) }
   color: var(--text, #111827);
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.times__row {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -473,6 +549,14 @@ function onStop(){ emit('stop', props.card) }
 .tcard__head--compact .edit-compact {
   border-radius: 8px;
   padding: .2rem .4rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease;
+}
+
+.tcard.compact:hover .tcard__head--compact .edit-compact {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .hours-lg {
@@ -489,9 +573,7 @@ function onStop(){ emit('stop', props.card) }
 }
 
 .tcard.compact .hours-lg {
-  position: absolute;
-  right: 8px;
-  bottom: 6px;
+  margin-left: auto;
 }
 
 :global([data-theme="dark"]) .hours-lg {
