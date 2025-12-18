@@ -32,7 +32,7 @@ def api_update_project(
     user=Depends(_verify_and_get_user_from_access),
 ):
     require_csrf(request)
-    proj = get_by_code(db, user_id=user.id, code=code)
+    proj = get_by_code(db, user_id=user.id, code=code.strip())
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
     return update_project(db, proj, payload)
@@ -46,4 +46,5 @@ def api_upsert_project(
     user=Depends(_verify_and_get_user_from_access),
 ):
     require_csrf(request)
-    return upsert_by_code(db, user_id=user.id, payload=payload)
+    payload2 = ProjectCreate(**{**payload.model_dump(), "code": payload.code.strip()})
+    return upsert_by_code(db, user_id=user.id, payload=payload2)

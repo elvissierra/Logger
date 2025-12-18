@@ -27,12 +27,14 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import draggable from 'vuedraggable'
 import TimeCard from './TimeCard.vue'
+import TodayLog from './TodayLog.vue'
+import WeekLog from './WeekLog.vue'
 import { API_BASE, apiFetch, getCsrf } from '../lib/api'
 import {
   pad, startOfWeek, addDays, dateKey, labelFor,
   timeHMFromISO, composeISOFromLaneAndTime, laneKeyFromISO,
   hoursBetweenRounded, roundHMToQuarter, roundDateToQuarter,
-  fmtH, isSameDay
+  fmtH,
 } from '../lib/time'
 
 // --- Projects (authoritative created_at for lane visibility) ---
@@ -84,7 +86,6 @@ function runningKey () {
 const _rk = runningKey()
 const runningId = ref(_rk ? localStorage.getItem(_rk) : null)
 const TARGET_WEEKLY_HOURS = 40
-function setUserId(id){ localStorage.setItem('logger.userId', id) }
 
 
 
@@ -266,14 +267,7 @@ function saveLaneMeta(lane) {
 function isEditingLaneMeta(laneKey) {
   return editingLaneKey.value === laneKey
 }
-// --- Lane description clamp/expand state ---
-const expandedLanes = ref({})
 function laneDesc(key){ return (getLaneMeta(key).description || '') }
-function isDescLong(key){ return laneDesc(key).length > 120 }
-function isExpanded(key){ return !!expandedLanes.value[key] }
-function toggleMoreDesc(key){ expandedLanes.value[key] = !expandedLanes.value[key] }
-
-
 // ---- Week navigation ----
 const currentWeekStart = ref(startOfWeek(new Date()))
 const weekLabel = computed(() => {
@@ -375,10 +369,17 @@ function onKey(e){
   else if (e.key==='ArrowRight'){ nextWeek(); e.preventDefault() }
 }
 function quickAddToday(){
-  if (!todayKey.value) goToToday()
+  const todayK = dateKey(new Date())
+  if (!headerDays.value.some(d => d.key === todayK)) goToToday()
+
   const lane = swimlanes.value[0]
   if (!lane){ addLane(); return }
-  const col = lane.columns.find(c=>c.dayKey===(todayKey.value||headerDays.value[0].key))
+
+  const keys = headerDays.value.map(d => d.key)
+  const targetKey = keys.includes(todayK) ? todayK : (keys[0] || null)
+  if (!targetKey) return
+
+  const col = lane.columns.find(c => c.dayKey === targetKey)
   if (col) addCard(lane, col)
 }
 
@@ -667,42 +668,6 @@ function cellHours(lane, dayKey) {
 }
 const weeklyHours = computed(() => headerDays.value.reduce((tot, d) => tot + colHours(d.key), 0))
 const weeklyPct = computed(() => Math.min(1, (TARGET_WEEKLY_HOURS ? (weeklyHours.value / TARGET_WEEKLY_HOURS) : 0)))
-const todayLabel = computed(() => todayHeader.value ? todayHeader.value.label : '')
-
-// ---- Focus: enlarge the current day's column at the top ----
-const todayHeader = computed(() => headerDays.value.find(d => isSameDay(d.date, new Date())))
-const todayKey = computed(() => todayHeader.value?.key || null)
-const showFocus = computed(() => !!todayKey.value && isSameDay(currentWeekStart.value, startOfWeek(new Date())))
-
-// Per-day plan note (local persistence for now; can be moved to backend later)
-const dailyPlan = ref('')
-function planKey(dayKey) {
-  const uid = currentUserId()
-  return uid ? `logger.dailyPlan:${uid}:${dayKey}` : null
-}
-watch(todayKey, (k) => {
-  const key = k ? planKey(k) : null
-  dailyPlan.value = key ? (localStorage.getItem(key) || '') : ''
-}, { immediate: true })
-watch(dailyPlan, (v) => {
-  const k = todayKey.value
-  const key = k ? planKey(k) : null
-  if (key) localStorage.setItem(key, v)
-})
-
-// Aggregate today's cards across all swimlanes
-// Today focus: flattens each lane’s Today column for a larger editor area at the top of the page.
-const todayLanes = computed(() => {
-  if (!todayKey.value) return []
-  return swimlanes.value
-    .filter(lane => laneVisibleOnDayByProjects(lane.key, todayKey.value))
-    .map(lane => ({
-      lane,
-      col: lane.columns.find(c => c.dayKey === todayKey.value) || { dayKey: todayKey.value, cards: [] },
-    }))
-})
-
-// Effects
 
 watch([currentWeekStart, groupBy], () => { load() })
 </script>
@@ -764,262 +729,67 @@ watch([currentWeekStart, groupBy], () => { load() })
         </button>
       </div>
     </header>
-    <!-- Focus area (today): quick editing surface and lane-level actions like start/stop. -->
-    <section v-if="layoutMode==='grid' && showFocus" class="focus focus--inboard">
-      <header class="focus__header">
-        <strong>Today — {{ todayLabel }}</strong>
-        <span class="focus__hours">{{ fmtH(colHours(todayKey), 2) }} h</span>
-      </header>
-      <div class="focus__layout">
-        <aside class="focus__plan">
-          <label class="focus__label">Today's plan</label>
-          <textarea
-            v-model="dailyPlan"
-            rows="6"
-            class="focus__textarea"
-            placeholder='e.g., "this is what I plan to work on today"'
-          ></textarea>
-        </aside>
-
-        <div class="focus__col">
-          <div
-            v-for="pair in todayLanes"
-            :key="pair.lane.key"
-            class="focus__lane"
-          >
-            <div class="focus__lanehead">
-              <div class="lane-title">
-                <strong>{{ pair.lane.title }}</strong>
-                <span
-                  v-if="getLaneMeta(pair.lane.key).priority"
-                  class="badge"
-                  :class="'p-' + (getLaneMeta(pair.lane.key).priority || 'Normal').toLowerCase()"
-                >
-                  {{ getLaneMeta(pair.lane.key).priority }}
-                </span>
-                <span
-                  v-if="isLaneRunning(pair.lane)"
-                  class="badge badge--running"
-                >
-                  Running
-                </span>
-              </div>
-              <div class="lane-actions">
-                <button
-                  class="mini icon"
-                  @click="isLaneRunning(pair.lane) ? stopTimer() : startLaneTimer(pair.lane)"
-                  :title="isLaneRunning(pair.lane) ? 'Stop timer' : 'Start timer'"
-                >
-                  {{ isLaneRunning(pair.lane) ? '■' : '▶︎' }}
-                </button>
-                <button
-                  class="mini icon"
-                  @click="editLaneMeta(pair.lane)"
-                  title="Edit project settings"
-                >
-                  ⋯
-                </button>
-                <button
-                  v-if="laneVisibleOnDayByProjects(pair.lane.key, pair.col.dayKey)"
-                  class="mini icon"
-                  @click="addCard(pair.lane, pair.col)"
-                  title="Add card"
-                >
-                  ＋
-                </button>
-              </div>
-            </div>
-
-            <div
-              v-if="isEditingLaneMeta(pair.lane.key)"
-              class="lane-meta-editor lane-meta-editor--focus"
-            >
-              <label class="lane-meta-editor__field">
-                <span>Priority</span>
-                <select v-model="laneMetaDraft.priority">
-                  <option v-for="p in PRIORITIES" :key="p" :value="p">{{ p }}</option>
-                </select>
-              </label>
-              <label class="lane-meta-editor__field">
-                <span>Description</span>
-                <textarea
-                  v-model="laneMetaDraft.description"
-                  rows="2"
-                  placeholder="What does this lane represent?"
-                ></textarea>
-              </label>
-              <div class="lane-meta-editor__actions">
-                <button type="button" class="mini" @click="saveLaneMeta(pair.lane)">Save</button>
-                <button type="button" class="mini" @click="cancelLaneMetaEdit">Cancel</button>
-              </div>
-            </div>
-            <div
-              v-else-if="getLaneMeta(pair.lane.key).description"
-              class="focus__lanedesc"
-            >
-              {{ getLaneMeta(pair.lane.key).description }}
-            </div>
-            <draggable
-              v-model="pair.col.cards"
-              item-key="id"
-              :animation="160"
-              handle=".handle"
-              class="focus__droplist"
-              :group="{ name: 'cards', pull: true, put: true }"
-              ghost-class="drag-ghost"
-              chosen-class="drag-chosen"
-              drag-class="drag-dragging"
-              @change="onCellChange(pair.lane, pair.col, $event)"
-              @end="onReorderCell(pair.lane, pair.col.dayKey)"
-            >
-              <template #item="{ element }">
-                <TimeCard :card="element" :open-on-mount="element.__new === true"
-                          :running-id="runningId" :now-tick="nowTick"
-                          @start="startTimer" @stop="stopTimer"
-                          @save="saveCard" @delete="c => deleteCard(pair.lane, pair.col, c)" />
-              </template>
-            </draggable>
-          </div>
-        </div>
-      </div>
-    </section>
+    
 
       <p v-if="error" class="error">{{ error }}</p>
       <p v-if="loading">Loading…</p>
-        
-      <!-- Scroller keeps header row and columns aligned on all widths -->
-      <!-- Weekly Board/Grid: 7-day matrix with swimlanes on rows; entries rendered only when present in a cell. -->
-      <div class="board__scroller" v-if="layoutMode==='grid'">
-        <h2 class="board__sectiontitle">Weekly log</h2>
-        <div class="grid">
-        <!-- Header row -->
-        <div class="cell cell--head"></div>
-        <div v-for="d in headerDays" :key="d.key" class="cell cell--head">
-          <div class="dayhead">
-            <strong>{{ d.label }}</strong>
-            <small>{{ fmtH(colHours(d.key), 2) }} h</small>
-          </div>
-        </div>
-
-        <!-- Swimlane rows -->
-        <template v-for="lane in swimlanes" :key="lane.key">
-        <div class="cell cell--rowhead">
-          <article
-            class="projcard"
-            :class="'prio-' + String((getLaneMeta(lane.key).priority || 'Normal')).toLowerCase()"
-          >
-            <!-- Row 1: color dot + project name -->
-            <header class="projcard__head">
-              <h4
-                class="title"
-                :title="lane.title + (laneDesc(lane.key) ? ' — ' + laneDesc(lane.key) : '')"
-              >
-                {{ lane.title }}
-              </h4>
-              <span
-                v-if="isLaneRunning(lane)"
-                class="projcard__running-icon"
-                title="Timer running"
-                aria-label="Timer running"
-              >
-                🌀
-              </span>
-            </header>
-          
-            <!-- Row 2: hours + summary + running icon -->
-            <div class="projcard__hoursrow">
-              <span class="projcard__hours-pill">
-                {{ fmtH(laneHours(lane), 2) }} h
-              </span>
-            
-              <span
-                v-if="laneEntryCount(lane)"
-                class="projcard__entries"
-              >
-                {{ laneEntryCount(lane) }} entr<span v-if="laneEntryCount(lane) !== 1">ies</span>
-              </span>
-            
-            </div>
-          
-            <!-- Row 3: buttons -->
-            <footer class="projcard__foot">
-              <div class="spacer"></div>
-              <div class="actions__icons">
-                <button
-                  class="mini icon"
-                  @click="isLaneRunning(lane) ? stopTimer() : startLaneTimer(lane)"
-                  :title="isLaneRunning(lane) ? 'Stop timer' : 'Start timer'"
-                >
-                  {{ isLaneRunning(lane) ? '■' : '▶︎' }}
-                </button>
-                <button
-                  class="mini icon"
-                  @click="editLaneMeta(lane)"
-                  title="Edit project settings"
-                >
-                  ⋯
-                </button>
-              </div>
-            </footer>
-            <div
-              v-if="isEditingLaneMeta(lane.key)"
-              class="lane-meta-editor lane-meta-editor--row"
-            >
-              <label class="lane-meta-editor__field">
-                <span>Priority</span>
-                <select v-model="laneMetaDraft.priority">
-                  <option v-for="p in PRIORITIES" :key="p" :value="p">{{ p }}</option>
-                </select>
-              </label>
-              <label class="lane-meta-editor__field">
-                <span>Description</span>
-                <textarea
-                  v-model="laneMetaDraft.description"
-                  rows="2"
-                  placeholder="Short description for this lane"
-                ></textarea>
-              </label>
-              <div class="lane-meta-editor__actions">
-                <button type="button" class="mini" @click="saveLaneMeta(lane)">Save</button>
-                <button type="button" class="mini" @click="cancelLaneMetaEdit">Cancel</button>
-              </div>
-            </div>
-          </article>
-        </div>
-
-          <!-- Row header cell -->
-          <!-- Day cells -->
-          <template v-for="col in lane.columns" :key="lane.key + ':' + col.dayKey">
-            <div class="cell">
-              <div class="cell__sum" v-if="cellHours(lane, col.dayKey)">{{ fmtH(cellHours(lane, col.dayKey), 2) }} h</div>
-              <div class="cell__actions">
-                <button class="mini icon" @click="addCard(lane, col)" title="Add card to this cell">＋</button>
-              </div>
-              <!-- Only render the list when there are actual entries -->
-              <draggable v-if="col.cards.length" v-model="col.cards"
-                item-key="id"
-                :animation="160"
-                handle=".handle"
-                class="droplist"
-                :group="{ name: 'cards', pull: true, put: true }"
-                ghost-class="drag-ghost"
-                chosen-class="drag-chosen"
-                drag-class="drag-dragging"
-                @change="onCellChange(lane, col, $event)"
-                @end="onReorderCell(lane, col.dayKey)"
-              >
-                <template #item="{ element }">
-                  <TimeCard :card="element" :open-on-mount="element.__new === true"
-                            :running-id="runningId" :now-tick="nowTick" :compact="true"
-                            @start="startTimer" @stop="stopTimer"
-                            @save="saveCard" @delete="c => deleteCard(lane, col, c)" />
-                </template>
-              </draggable>
-            </div>
-          </template>
-        </template>
-      </div>
-    </div>
+      <TodayLog
+        :layout-mode="layoutMode"
+        :current-week-start="currentWeekStart"
+        :header-days="headerDays"
+        :swimlanes="swimlanes"
+        :running-id="runningId"
+        :now-tick="nowTick"
+        :fmt-h="fmtH"
+        :col-hours="colHours"
+        :get-lane-meta="getLaneMeta"
+        :lane-visible-on-day-by-projects="laneVisibleOnDayByProjects"
+        :is-lane-running="isLaneRunning"
+        :priorities="PRIORITIES"
+        :lane-meta-draft="laneMetaDraft"
+        :is-editing-lane-meta="isEditingLaneMeta"
+        :edit-lane-meta="editLaneMeta"
+        :save-lane-meta="saveLaneMeta"
+        :cancel-lane-meta-edit="cancelLaneMetaEdit"
+        :start-lane-timer="startLaneTimer"
+        :start-timer="startTimer"
+        :stop-timer="stopTimer"
+        :add-card="addCard"
+        :save-card="saveCard"
+        :delete-card="deleteCard"
+        :on-cell-change="onCellChange"
+        :on-reorder-cell="onReorderCell"
+      />
+      <!-- Weekly Board/Grid extracted into WeekLog.vue -->
+      <WeekLog
+        :layout-mode="layoutMode"
+        :header-days="headerDays"
+        :swimlanes="swimlanes"
+        :running-id="runningId"
+        :now-tick="nowTick"
+        :fmt-h="fmtH"
+        :col-hours="colHours"
+        :lane-hours="laneHours"
+        :lane-entry-count="laneEntryCount"
+        :cell-hours="cellHours"
+        :get-lane-meta="getLaneMeta"
+        :lane-desc="laneDesc"
+        :is-lane-running="isLaneRunning"
+        :priorities="PRIORITIES"
+        :lane-meta-draft="laneMetaDraft"
+        :is-editing-lane-meta="isEditingLaneMeta"
+        :edit-lane-meta="editLaneMeta"
+        :save-lane-meta="saveLaneMeta"
+        :cancel-lane-meta-edit="cancelLaneMetaEdit"
+        :start-lane-timer="startLaneTimer"
+        :start-timer="startTimer"
+        :stop-timer="stopTimer"
+        :add-card="addCard"
+        :save-card="saveCard"
+        :delete-card="deleteCard"
+        :on-cell-change="onCellChange"
+        :on-reorder-cell="onReorderCell"
+      />
     <!-- Simple layout: per-day stacks per project -->
     <!-- Simple layout: projects/activities as columns; entries stacked vertically per selected day. -->
     <section v-if="layoutMode==='simple'" class="simple">
@@ -1116,14 +886,6 @@ watch([currentWeekStart, groupBy], () => { load() })
   border-bottom: 1px solid var(--border);
 }
 
-.board__sectiontitle {
-  margin: 4px 6px 8px;
-  font-size: 0.9rem;
-  font-weight: 650;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
 
 /* Top nav + toolbar */
 .nav {
@@ -1208,28 +970,6 @@ select {
   min-width: 180px;
 }
 
-/* Small icon buttons */
-.mini {
-  padding: 0.2rem 0.45rem;
-  border: 1px solid var(--border);
-  background: var(--btn-blue-bg);
-  color: var(--primary);
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.mini:hover {
-  background: var(--btn-blue-bg-hover);
-}
-
-.mini.icon {
-  padding: 0.2rem;
-  width: 28px;
-  height: 28px;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 10px;
-}
 
 /* Weekly goal bar */
 .goal {
@@ -1275,361 +1015,8 @@ select {
   font-weight: 600;
 }
 
-/* Weekly board scroller */
-.board__scroller {
-  margin-top: 6px;
-  padding: 10px 10px 14px;
-  background: var(--panel);
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
-  overflow: auto;
-}
-
-/* Spreadsheet-style weekly grid */
-.grid {
-  --rowhead-w: 170px;
-  display: grid;
-  grid-template-columns: var(--rowhead-w) repeat(7, minmax(140px, 1fr));
-  gap: 8px;
-  align-items: start;
-  padding: 6px 0;
-}
-
-.cell {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  min-height: 120px;
-  position: relative;
-  padding: 26px 6px 8px;
-}
-
-/* Container for stacked compact cards – behaves like a file-folder stack */
-.cell .droplist {
-  margin-top: 10px;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 0; /* overlap provides the separation */
-}
-
-.cell .droplist :deep(.tcard.compact) {
-  position: relative;
-  z-index: 1;
-  box-shadow: var(--shadow-sm);
-  background: var(--panel);
-  border-radius: 12px;
-  padding: 0.75rem 0.8rem 0.7rem 0.8rem;
-  min-height: 56px;
-
-  /* Folder-stack overlap: each card tucks slightly under the one above */
-  margin-top: -18px;
-  transition:
-    margin-top 0.15s ease,
-    transform 0.12s ease,
-    box-shadow 0.12s ease;
-}
-
-/* First card in the stack starts flush with the lane */
-.cell .droplist :deep(.tcard.compact:first-child) {
-  margin-top: 0;
-}
-
-.cell:hover {
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 25%, transparent);
-  border-color: color-mix(in srgb, var(--border) 60%, var(--primary) 40%);
-}
-
-.cell--head {
-  background: transparent;
-  border: none;
-  min-height: auto;
-}
-
-/* Collapse top-left header spacer */
-.grid > .cell.cell--head:first-child {
-  padding: 0;
-  min-height: 0;
-  background: transparent;
-  border: none;
-  box-shadow: none;
-}
-
-/* Sticky project row headers */
-.cell--rowhead {
-  position: sticky;
-  left: 0;
-  z-index: 5;
-  background: var(--panel);
-  border-right: 1px solid var(--border);
-  padding: 8px 6px 8px;
-  overflow: visible; /* let meta editor expand */
-}
-
-.dayhead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 6px;
-  border-bottom: 1px solid var(--border);
-  color: var(--muted);
-  font-weight: 600;
-  font-size: 0.88rem;
-  white-space: nowrap;
-  gap: 6px;
-}
-
-.dayhead strong {
-  letter-spacing: 0.01em;
-  font-weight: 600;
-}
-
-.dayhead small {
-  font-weight: 600;
-  opacity: 0.9;
-  font-size: 0.8rem;
-  flex-shrink: 0;
-}
-
-/* Per-cell summary + add button */
-.cell__sum {
-  position: absolute;
-  top: 4px;
-  left: 6px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--muted);
-  padding: 0;
-  background: transparent;
-  border: none;
-}
-
-.cell__actions {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-}
-
-/* Row-header project card */
-.projcard {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 10px 10px 9px;
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--panel-2) 92%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
-  box-shadow: var(--shadow-sm);
-  overflow: visible;
-}
-
-/* Folder-style strip at top of project card (color from priority) */
-.projcard::before {
-  content: '';
-  position: absolute;
-  top: 4px;
-  left: 10px;
-  width: 64px;
-  height: 10px;
-  border-radius: 10px 10px 0 0;
-  background: color-mix(in srgb, var(--primary, #5b8cff) 20%, transparent);
-  opacity: 0.9;
-}
-
-.projcard.prio-low::before {
-  background: #93c5fd;
-}
-.projcard.prio-normal::before {
-  background: #a5b4fc;
-}
-.projcard.prio-high::before {
-  background: #fdba74;
-}
-.projcard.prio-critical::before {
-  background: #fca5a5;
-}
-
-.projcard__head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.projcard__head .title {
-  margin: 0;
-  font-size: 0.9rem;
-  font-weight: 650;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.projcard__running-icon {
-  font-size: 0.9rem;
-  flex-shrink: 0;
-}
-
-/* Project card hours row */
-.projcard__hoursrow {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 2px;
-  font-size: 0.78rem;
-  color: var(--muted);
-}
-
-/* Make daily total hours plain text (no pill) */
-.projcard__hours-pill {
-  padding: 0;
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  font-weight: 600;
-  color: var(--muted);
-}
-
-/* Entry count text */
-.projcard__entries {
-  font-size: 0.75rem;
-  color: var(--muted);
-  white-space: nowrap;
-  flex: 1;
-  text-align: right;
-  margin-right: 4px;
-}
-
-.projcard__foot {
-  display: flex;
-  align-items: center;
-  margin-top: 4px;
-}
-
-.projcard__foot .spacer {
-  flex: 1;
-}
-
-.projcard__foot .actions__icons {
-  display: flex;
-  gap: 6px;
-}
-
-.projcard__foot .mini.icon {
-  background: var(--btn-blue-bg);
-  border-color: var(--border);
-}
-
-.projcard__foot .mini.icon:hover {
-  background: var(--btn-blue-bg-hover);
-}
-
-/* Priority dot (matches TimeCard) */
-.prio-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  display: inline-block;
-  border: 1px solid var(--border);
-}
-
-.prio-dot.p-low {
-  background: #93c5fd;
-  border-color: #93c5fd;
-}
-.prio-dot.p-normal {
-  background: #a5b4fc;
-  border-color: #a5b4fc;
-}
-.prio-dot.p-high {
-  background: #fdba74;
-  border-color: #fdba74;
-}
-.prio-dot.p-critical {
-  background: #fca5a5;
-  border-color: #fca5a5;
-}
-
-/* Lane meta inline editor */
-.lane-meta-editor {
-  margin-top: 6px;
-  padding: 6px 8px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--panel-2) 85%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
-  display: grid;
-  gap: 4px;
-  border-top: 1px dashed var(--border);
-}
-
-.lane-meta-editor--focus {
-  margin: 4px 0 0;
-}
-
-.lane-meta-editor--row {
-  margin-top: 6px;
-}
-
-.lane-meta-editor__field {
-  display: grid;
-  gap: 2px;
-  font-size: 0.78rem;
-  color: var(--muted);
-}
-
-.lane-meta-editor__field select,
-.lane-meta-editor__field textarea {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.3rem 0.45rem;
-  color: var(--text);
-  font-size: 0.8rem;
-}
-
-.lane-meta-editor__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 4px;
-  margin-top: 2px;
-}
-
-.lane-meta-editor textarea {
-  max-height: 160px;
-  resize: vertical;
-}
-
-/* Badges for priority (Today focus view) */
-.badge {
-  font-size: 0.72rem;
-  padding: 0.1rem 0.45rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-}
-
-.badge.p-low {
-  background: #eef6ff;
-  color: #1e3a8a;
-}
-.badge.p-normal {
-  background: #eef2ff;
-  color: #3730a3;
-}
-.badge.p-high {
-  background: #fff7ed;
-  color: #9a3412;
-  border-color: #fed7aa;
-}
-.badge.p-critical {
-  background: #fef2f2;
-  color: #991b1b;
-  border-color: #fecaca;
-}
-
-.badge.hours {
+/* Toasts */
+.hours {
   /* Day total: plain text, no pill container */
   background: transparent;
   border: none;
@@ -1638,135 +1025,6 @@ select {
   font-weight: 600;
   color: var(--muted);
 }
-
-/* Focus (today) panel */
-.focus {
-  width: 100%;
-  margin: 12px 0 16px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-}
-
-.focus--inboard {
-  max-width: 100%;
-}
-
-.focus__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border);
-}
-
-.focus__hours {
-  color: var(--muted);
-  font-weight: 700;
-}
-
-.focus__layout {
-  position: relative;
-  display: grid;
-  align-items: start;
-  grid-template-columns: 340px 1fr;
-  gap: 16px;
-  padding: 12px;
-}
-
-@media (max-width: 1100px) {
-  .focus__layout {
-    grid-template-columns: 1fr;
-  }
-}
-
-.focus__plan {
-  display: grid;
-  gap: 8px;
-  position: sticky;
-  top: 0;
-  align-self: start;
-  z-index: 0;
-}
-
-.focus__label {
-  font-weight: 700;
-  color: var(--muted);
-  display: block;
-  margin-bottom: 0.5rem;
-}
-
-.focus__textarea {
-  width: 100%;
-  min-height: 160px;
-  resize: vertical;
-  padding: 0.6rem 0.7rem;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel-2);
-  color: var(--text);
-}
-
-.focus__col {
-  display: grid;
-  gap: 12px;
-  position: relative;
-  z-index: 1;
-}
-
-.focus__lane {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
-
-.focus__lanehead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
-  font-weight: 700;
-}
-
-.focus__lanedesc {
-  color: var(--muted);
-  font-size: 0.85rem;
-  padding: 6px 10px 0;
-}
-
-.focus__droplist {
-  display: grid;
-  gap: 10px;
-  padding: 10px;
-  max-height: none;
-  position: relative;
-  z-index: 1;
-}
-
-/* Draggable defaults for TimeCard in focus + grid */
-.droplist :deep(.tcard),
-.focus :deep(.tcard) {
-  background: var(--panel);
-  color: var(--text);
-  border-color: var(--border);
-  box-shadow: var(--shadow-sm);
-}
-
-/* Drag feedback */
-:global(.drag-ghost) {
-  opacity: 0.6;
-  transform: rotate(2deg);
-}
-:global(.drag-chosen) {
-  box-shadow: var(--shadow-md) !important;
-}
-:global(.drag-dragging) {
-  cursor: grabbing;
-}
-
-/* Toasts */
 .toastbox {
   position: fixed;
   top: 12px;

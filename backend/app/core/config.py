@@ -34,9 +34,9 @@ class Settings:
     # main.py consumes this to install CORSMiddleware with credentials enabled.
     BACKEND_CORS_ORIGINS: List[str] = [
         origin.strip()
-        for origin in os.getenv("BACKEND_CORS_ORIGINS", "http://localhost:5173").split(
-            ","
-        )
+        for origin in os.getenv(
+            "BACKEND_CORS_ORIGINS", "http://localhost:5173"
+        ).split(",")
         if origin.strip()
     ]
 

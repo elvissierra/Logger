@@ -16,3 +16,42 @@ a {
 button {
   font-family: inherit;
 }
+
+
+/* Shared UI utilities (used across board sub-components) */
+.board__sectiontitle {
+  margin: 4px 6px 8px;
+  font-size: 0.9rem;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Small icon/mini buttons */
+.mini {
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--border);
+  background: var(--btn-blue-bg);
+  color: var(--primary);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.mini:hover {
+  background: var(--btn-blue-bg-hover);
+}
+
+.mini.icon {
+  padding: 0.2rem;
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 10px;
+}
+
+/* Drag feedback (vuedraggable) */
+.drag-ghost { opacity: 0.6; transform: rotate(2deg); }
+.drag-chosen { box-shadow: var(--shadow-md) !important; }
+.drag-dragging { cursor: grabbing; }
