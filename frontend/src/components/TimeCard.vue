@@ -158,9 +158,9 @@ function onStop(){ emit('stop', props.card) }
   <article
     class="tcard"
     :class="[{ editing, compact }, 'prio-' + String(card.priority || 'Normal').toLowerCase()]"
-    :style="(compact && !editing)
-        ? { minHeight: ((heightPx || 56)) + 'px' }
-        : {}"
+    :style="(compact && !editing && heightPx != null)
+      ? { minHeight: (Number(heightPx) || 0) + 'px' }
+      : {}"
   >
     <!-- Full header (focus cards) -->
     <header v-if="!compact" class="tcard__head">
@@ -175,59 +175,70 @@ function onStop(){ emit('stop', props.card) }
       <div class="hours" v-if="roundedDurationHours > 0">{{ fmtH(roundedDurationHours, 2) }} h</div>
     </header>
 
-    <!-- Compact header: show times + optional label; optimized for small weekly cells. -->
-    <header v-else class="tcard__head tcard__head--compact" @dblclick="editing = true">
-      <span class="handle" title="Drag to reorder" aria-label="Drag handle">☰</span>
-      <div class="times">
-        <!-- Project / lane label first (top line) -->
-        <div
-          v-if="card.jobTitle || card.projectCode || card.activity"
-          class="times__label"
-          :title="(card.jobTitle || card.projectCode || 'Untitled') + (card.activity ? ' — ' + card.activity : '')"
-        >
-          <span class="times__label-main">
-            {{ card.jobTitle || card.projectCode || 'Untitled' }}
-          </span>
-          <span v-if="card.activity" class="times__label-sep"> • </span>
-          <span v-if="card.activity" class="times__label-activity">
-            {{ card.activity }}
-          </span>
-        </div>
 
-        <!-- Time range second (stacked start/end for strict separation) -->
-        <div class="times__range">
-          <div class="times__row times__row--start">
-            {{ new Date(card.start_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
-          </div>
-          <div class="times__row times__row--end">
-            <span v-if="!isRunning && card.end_utc">
-              {{ new Date(card.end_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
-            </span>
-            <span v-else>Now</span>
-          </div>
+    <!-- Compact (weekly deck) folder tab + folder face -->
+    <div
+      v-if="compact && !editing"
+      class="foldertab handle"
+      :class="('p-' + String(card.priority || 'Normal').toLowerCase())"
+      :title="card.jobTitle || card.projectCode || card.activity || 'Untitled'"
+    >
+      {{ card.jobTitle || card.projectCode || card.activity || 'Untitled' }}
+    </div>
+
+    <section
+      v-if="compact && !editing"
+      class="folderbody"
+      @dblclick="editing = true"
+    >
+      <div class="bodyTitle">
+        {{ card.jobTitle || card.projectCode || 'Untitled' }}
+      </div>
+
+      <div class="timeblock">
+        <div class="tstart">
+          {{ card.start_utc ? new Date(card.start_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--' }}
+        </div>
+        <div class="tend">
+          <span v-if="!isRunning && card.end_utc">
+            {{ new Date(card.end_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+          </span>
+          <span v-else>Now</span>
         </div>
       </div>
-      <button
-        class="icon edit-compact"
-        title="Edit"
-        aria-label="Edit"
-        @click.stop="editing = true"
-      >
-        ✎
-      </button>
-    </header>
 
-    <!-- Compact weekly card body (only when not editing) -->
-    <section v-if="compact && !editing" class="tcard__body tcard__body--compact">
-      <div class="mini-meta-row">
-        <span
-          v-if="card.priority && card.priority !== 'Normal'"
-          class="mini-meta__pri"
-          :class="'p-' + (card.priority || 'Normal').toLowerCase()"
+      <div class="deckActions" aria-label="Entry actions">
+        <button
+          class="deckBtn"
+          :title="isRunning ? 'Stop' : 'Start'"
+          :aria-label="isRunning ? 'Stop' : 'Start'"
+          @click.stop="isRunning ? onStop() : onStart()"
         >
-          {{ card.priority }}
+          {{ isRunning ? '■' : '▶︎' }}
+        </button>
+        <button
+          class="deckBtn"
+          title="Options"
+          aria-label="Options"
+          @click.stop="editing = true"
+        >
+          ⋯
+        </button>
+        <button
+          class="deckBtn"
+          title="Add"
+          aria-label="Add"
+          disabled
+        >
+          ＋
+        </button>
+      </div>
+
+      <div class="pillrow">
+        <span class="pill urgency">
+          {{ (card.priority && card.priority !== 'Normal') ? card.priority : 'Urgency' }}
         </span>
-        <span class="hours-lg">
+        <span class="pill hours">
           {{ fmtH(roundedDurationHours, 2) }} h
         </span>
       </div>
@@ -332,63 +343,124 @@ function onStop(){ emit('stop', props.card) }
   .tcard:hover { box-shadow: var(--shadow-md, 0 6px 16px rgba(0,0,0,.08)); border-color: color-mix(in srgb, var(--border, #e5e7eb) 70%, var(--primary, #5b8cff) 30%); }
   
   .tcard__body { color: var(--text, #374151); min-height: 52px; overflow: hidden; }
-/* Folder tab on compact cards – wide, rounded strip */
-.tcard.compact::before {
-  content: '';
-  position: absolute;
-  top: -2px;
-  left: 10px;
-  width: 78%;
-  height: 13px;
-  border-radius: 10px 10px 0 0;
-  background: color-mix(in srgb, var(--primary, #5b8cff) 22%, transparent);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
-  opacity: 0.96;
-}
 
-/* Priority colors for the tab */
-.tcard.compact.prio-low::before {
-  background: #93c5fd;
-}
-.tcard.compact.prio-normal::before {
-  background: #a5b4fc;
-}
-.tcard.compact.prio-high::before {
-  background: #fdba74;
-}
-.tcard.compact.prio-critical::before {
-  background: #fca5a5;
-}
-
-/* Expand compact cards on hover */
-.tcard.compact:hover {
-  max-height: 168px;
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md, 0 8px 24px rgba(0,0,0,.08));
-}
-
-/* Compact body is hidden until hover */
-.tcard__body--compact {
+/* ===== Compact Folder Card (Weekly Deck) ===== */
+.tcard.compact {
+  border-radius: 18px;
+  padding: 16px;
+  min-height: 172px;
   overflow: hidden;
-  max-height: 0;
-  opacity: 0;
-  transition: max-height .15s ease, opacity .15s ease;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  gap: 4px;
 }
 
-.mini-meta-row {
+/* Priority tints for the folder face */
+.tcard.compact.prio-low { background: #93c5fd; border-color: #93c5fd; }
+.tcard.compact.prio-normal { background: #86efac; border-color: #86efac; }
+.tcard.compact.prio-high { background: #fdba74; border-color: #fdba74; }
+.tcard.compact.prio-critical { background: #fca5a5; border-color: #fca5a5; }
+
+/* Folder tab (used by older stacked entries; becomes the drag handle) */
+.foldertab {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  height: 44px;
+  width: 72%;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 4px;
+  justify-content: flex-start;
+  padding: 0 14px;
+  border-radius: 18px;
+  font-weight: 850;
+  font-size: 1.05rem;
+  color: rgba(0,0,0,.75);
+  border: 1px solid rgba(0,0,0,.12);
+  box-shadow: 0 2px 0 rgba(0,0,0,.06);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: grab;
+  user-select: none;
+  z-index: 2;
+}
+.foldertab.p-low { background: #93c5fd; }
+.foldertab.p-normal { background: #86efac; }
+.foldertab.p-high { background: #fdba74; }
+.foldertab.p-critical { background: #fca5a5; }
+
+/* Folder face content (newest/top entry) */
+.folderbody {
+  position: relative;
+  width: 100%;
+  height: 100%;
 }
 
-.tcard.compact:hover .tcard__body--compact {
-  max-height: 80px;
-  opacity: 1;
+.bodyTitle {
+  position: absolute;
+  top: 18px;
+  right: 16px;
+  font-weight: 900;
+  font-size: 1.35rem;
+  color: rgba(0,0,0,.75);
+}
+
+.timeblock {
+  position: absolute;
+  left: 16px;
+  top: 78px;
+  display: grid;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(0,0,0,.75);
+}
+.timeblock .tstart,
+.timeblock .tend {
+  font-weight: 900;
+  font-size: 1.05rem;
+}
+
+.deckActions {
+  position: absolute;
+  right: 14px;
+  top: 92px;
+  display: grid;
+  gap: 10px;
+}
+
+.deckBtn {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,.12);
+  background: rgba(255,255,255,.55);
+  cursor: pointer;
+  font-weight: 900;
+  line-height: 1;
+}
+.deckBtn:hover { background: rgba(255,255,255,.7); }
+.deckBtn:disabled { opacity: .35; cursor: default; }
+
+.pillrow {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 14px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pill {
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.55);
+  border: 1px solid rgba(0,0,0,.12);
+  font-weight: 850;
+  color: rgba(0,0,0,.75);
+}
+
+.pill.hours {
+  min-width: 4.5rem;
+  text-align: center;
 }
   .tcard__body p { margin: .25rem 0; word-break: break-word; overflow-wrap: anywhere; }
   
@@ -407,7 +479,7 @@ function onStop(){ emit('stop', props.card) }
   /* color-only priority dot */
   .prio-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; border: 1px solid var(--border, #e5e7eb); }
   .prio-dot.p-low { background: #93c5fd; border-color: #93c5fd; }
-  .prio-dot.p-normal { background: #a5b4fc; border-color: #a5b4fc; }
+  .prio-dot.p-normal { background: #86efac; border-color: #86efac; }
   .prio-dot.p-high { background: #fdba74; border-color: #fdba74; }
   .prio-dot.p-critical { background: #fca5a5; border-color: #fca5a5; }
   
@@ -474,120 +546,6 @@ function onStop(){ emit('stop', props.card) }
   button.danger { border-color: #ef4444; color: #b91c1c; }
   .actions__icons { display: flex; gap: .35rem; }
   
-.tcard.compact {
-  padding: .8rem .6rem .7rem .6rem;
-  min-height: 48px;
-  grid-template-rows: auto;
-  align-content: flex-start;
-  position: relative;
-  max-height: 68px;
-  overflow: hidden;
-  transition:
-    max-height .15s ease,
-    transform .12s ease,
-    box-shadow .12s ease;
-}
-
-.tcard.compact.editing {
-  max-height: none; /* allow full height while editing */
-}
-
-.tcard__head--compact {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto; /* handle | title+times | edit */
-  align-items: center;
-  gap: .35rem;
-}
-
-.tcard__head--compact .times {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.times__range {
-  font-size: .84rem;
-  font-weight: 600;
-  color: var(--text, #111827);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.times__row {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-:global([data-theme="dark"]) .times__range {
-  color: #e5f3f0;
-}
-
-  .times__label {
-    font-size: .75rem;
-    color: var(--muted, #6b7280);
-    line-height: 1.1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .times__label-main {
-    font-weight: 500;
-  }
-  .times__label-sep {
-    opacity: .65;
-    padding: 0 .12rem;
-  }
-  .times__label-activity {
-    color: var(--muted, #6b7280);
-  }
-
-.tcard__head--compact .edit-compact {
-  border-radius: 8px;
-  padding: .2rem .4rem;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity .12s ease;
-}
-
-.tcard.compact:hover .tcard__head--compact .edit-compact {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.hours-lg {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 3.25rem;
-  font-weight: 600;
-  font-size: .8rem;
-  padding: .12rem .55rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--primary, #5b8cff) 8%, transparent);
-  color: var(--text, #111827);
-}
-
-.tcard.compact .hours-lg {
-  margin-left: auto;
-}
-
-:global([data-theme="dark"]) .hours-lg {
-  background: rgba(127, 209, 195, 0.16);
-  color: #e5f3f0;
-}
-
-.tcard.compact .handle,
-.tcard.compact .tcard__title,
-.tcard.compact .meta,
-.tcard__body--compact .desc,
-.tcard__body--compact .notes { display: none !important; }
-
-.tcard.compact .tcard__foot { display: none; }
   
   /* When a compact card is editing, stack Start/End vertically to avoid overflow */
   .tcard.compact.editing .tcard__edit .row { grid-template-columns: 1fr; }
@@ -622,11 +580,10 @@ function onStop(){ emit('stop', props.card) }
     color: #1e3a8a;
     border-color: #bfdbfe;
   }
-  .mini-meta__pri.p-normal {
-    background: #eef2ff;
-    color: #3730a3;
-    border-color: #c7d2fe;
-  }
+  .mini-meta__pri.p-normal { 
+    background: #ecfdf5;
+    color: #065f46; border-color: #bbf7d0;
+   }
   .mini-meta__pri.p-high {
     background: #fff7ed;
     color: #9a3412;

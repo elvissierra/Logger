@@ -27,6 +27,10 @@ from app.core.database import get_db
 from app.core.security import require_csrf
 from sqlalchemy.orm import Session
 
+import logging
+
+log = logging.getLogger("uvicorn.error")
+
 # Use shared schemas to avoid duplication
 from app.schemas.time_entry import TimeEntryCreate, TimeEntryUpdate, TimeEntryOut
 
@@ -99,11 +103,16 @@ def api_create_entry(
         if crud_has_overlap(db, user_id=user.id, start_utc=payload2.start_utc, end_utc=payload2.end_utc):
             raise HTTPException(status_code=409, detail="Overlapping time entry for user")
 
-    # Ensure project exists for this user (best-effort)
+    # Ensure project exists for this user (best-effort).
+    # If upsert fails, rollback the session; otherwise subsequent DB work in this request can fail
+    # with InFailedSqlTransaction.
     try:
         upsert_by_code(db, user_id=user.id, payload=ProjectCreate(code=payload2.project_code))
-    except Exception:
-        pass
+    except Exception as e:
+        db.rollback()
+        log.warning(
+            f"[projects] upsert_by_code failed (create_entry) user_id={user.id} code={payload2.project_code}: {e}"
+        )
 
     return crud_create_entry(db, payload2)
 
@@ -173,8 +182,11 @@ def api_update_entry(
                 user_id=entry.user_id,
                 payload=ProjectCreate(code=payload.project_code),
             )
-    except Exception:
-        pass
+    except Exception as e:
+        db.rollback()
+        log.warning(
+            f"[projects] upsert_by_code failed (update_entry) user_id={entry.user_id} code={payload.project_code}: {e}"
+        )
     return crud_update_entry(db, entry, payload)
 
 

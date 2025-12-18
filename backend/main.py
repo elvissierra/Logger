@@ -6,7 +6,6 @@ What this file does
 
 How it works with other resources
 - CORS allowlist is parsed from env; CORSMiddleware is installed before routers so all responses include headers.
-- On startup, creates tables when using SQLite for dev; on Postgres this is a safe no-op.
 
 Why it’s necessary
 - Single composition point for the API; keeps route modules small and focused.
@@ -28,6 +27,7 @@ from app.core.database import Base, engine
 from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+APP_ENVIRONMENT = os.getenv("APP_ENV", "dev").lower()
 
 APP_NAME = os.getenv("APP_NAME", "Logger API")
 
@@ -35,6 +35,12 @@ APP_NAME = os.getenv("APP_NAME", "Logger API")
 # Parse BACKEND_CORS_ORIGINS from CSV or JSON array to a normalized list
 _def_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
 _env_origins = os.getenv("BACKEND_CORS_ORIGINS", "").strip()
+
+log = logging.getLogger("uvicorn.error")
+
+
+def _truthy(v: str | None) -> bool:
+    return str(v or "").strip().lower() in {"1", "true"}
 
 
 def _parse_origins(val: str):
@@ -67,15 +73,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Enforce HTTPS and trusted hosts in production
-if os.getenv("FORCE_HTTPS", "0") == "1":
+# Enforce HTTPS and trusted hosts in production-like environments only.
+# Locally (APP_ENV=dev), we keep HTTP to avoid 307 redirects on health checks and manual testing.
+if APP_ENVIRONMENT == "prod" and _truthy(os.getenv("FORCE_HTTPS")):
     app.add_middleware(HTTPSRedirectMiddleware)
+
 trusted_hosts = os.getenv("TRUSTED_HOSTS", "").split(",")
 trusted_hosts = [h.strip() for h in trusted_hosts if h.strip()]
 if trusted_hosts:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)
-
-log = logging.getLogger("uvicorn.error")
 
 
 # Lightweight observability: log 404s under /api/* with user-agent/referer/client for debugging
@@ -91,10 +97,24 @@ async def log_404s(request: Request, call_next):
     return resp
 
 
-# Dev convenience: create tables for SQLite; Postgres ignores create_all if tables already exist
 @app.on_event("startup")
 def _startup():
-    Base.metadata.create_all(bind=engine)
+    backend = "unknown"
+    try:
+        backend = engine.url.get_backend_name()
+    except Exception:
+        pass
+
+    enabled = _truthy(os.getenv("CREATE_TABLES_ON_STARTUP")) or backend == "postgres"
+    if enabled:
+        log.info(f"[startup] create_all enabled (backend={backend})")
+        Base.metadata.create_all(bind=engine)
+    else:
+        log.info(
+            f"[startup] create_all skipped (backend={backend}); relying on Alembic migrations"
+        )
+
+    log.info(f"[startup] {APP_NAME} booted; CORS={BACKEND_CORS_ORIGINS}")
 
 
 log.info(f"[startup] {APP_NAME} booted; CORS={BACKEND_CORS_ORIGINS}")
