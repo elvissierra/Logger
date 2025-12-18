@@ -99,28 +99,45 @@ function setRunningId (id) {
   else localStorage.removeItem(rk)
 }
 async function stopRunningIfAny () {
-  if (!runningId.value) return null
+  if (!runningId.value) return { stopped: false, id: null, error: null }
+
   const id = runningId.value
   try {
     const res = await apiFetch(`${API_BASE}/api/time-entries/${id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': getCsrf()
+      },
       body: JSON.stringify({ end_utc: new Date().toISOString() })
     })
-    if (!res.ok) notify(`Failed to stop timer: ${await res.text()}`, 'error')
-  } catch (e) {
-    notify(`Failed to stop timer: ${e?.message || e}`, 'error')
-  } finally {
+
+    if (!res.ok) {
+      const msg = await extractErrorMessage(res)
+      notify(`Could not stop existing timer: ${msg}`, 'error', 6000)
+      return { stopped: false, id, error: msg }
+    }
+
     setRunningId(null)
+    await load()
+    return { stopped: true, id, error: null }
+  } catch (e) {
+    const msg = e?.message || String(e)
+    notify(`Could not stop existing timer: ${msg}`, 'error', 6000)
+    return { stopped: false, id, error: msg }
   }
-  await load()
-  return id
 }
 // Start a timer: stop any existing one, create a new *running* entry (end_utc=null).
 async function startTimer (seedCard) {
-  await stopRunningIfAny()
+  const { error } = await stopRunningIfAny()
+  if (error) {
+    // Backend still thinks a timer is running; don’t try to start another.
+    return
+  }
+
   const now = new Date()
   const payload = {
+    
     project_code: seedCard.project_code || seedCard.projectCode || '',
     activity: seedCard.activity || '',
     job_title: seedCard.job_title || seedCard.jobTitle || null,
@@ -135,7 +152,8 @@ async function startTimer (seedCard) {
     body: JSON.stringify(payload)
   })
   if (!res.ok) {
-    return notify(`Failed to start timer: ${await res.text()}`, 'error')
+    const msg = await extractErrorMessage(res)
+    return notify(`Failed to start timer: ${msg}`, 'error', 6000)
   }
 
   const created = await res.json()
@@ -144,8 +162,8 @@ async function startTimer (seedCard) {
   notify('Timer started', 'success')
 }
 async function stopTimer () {
-  const id = await stopRunningIfAny()
-  if (id) notify('Timer stopped', 'success')
+  const { stopped } = await stopRunningIfAny()
+  if (stopped) notify('Timer stopped', 'success')
 }
 function isLaneRunning(lane) {
   try {
@@ -156,6 +174,22 @@ function isLaneRunning(lane) {
     return false
   } catch { return false }
 }
+
+const runningLaneTitle = computed(() => {
+  if (!runningId.value) return ''
+  try {
+    for (const lane of swimlanes.value) {
+      for (const col of lane.columns) {
+        if (col.cards && col.cards.some(c => c.id === runningId.value)) {
+          return lane.title
+        }
+      }
+    }
+    return ''
+  } catch {
+    return ''
+  }
+})
 
 async function startLaneTimer(lane) {
   const meta = getLaneMeta(lane.key) || {}
@@ -197,14 +231,40 @@ function laneMetaStorageKey(laneKey) {
 function getLaneMeta(laneKey) {
   try { return JSON.parse(localStorage.getItem(laneMetaStorageKey(laneKey)) || '{}') } catch { return {} }
 }
-function setLaneMeta(laneKey, meta) { localStorage.setItem(laneMetaStorageKey(laneKey), JSON.stringify(meta || {})) }
+function setLaneMeta(laneKey, meta) {
+  localStorage.setItem(laneMetaStorageKey(laneKey), JSON.stringify(meta || {}))
+}
+
+// Inline lane meta editor state (replaces window.prompt UX)
+const editingLaneKey = ref(null)
+const laneMetaDraft = ref({ description: '', priority: 'Normal' })
+
 function editLaneMeta(lane) {
   const current = getLaneMeta(lane.key)
-  const desc = window.prompt('Project description:', current.description || '') ?? (current.description || '')
-  const pri  = window.prompt('Priority (Low, Normal, High, Critical):', current.priority || 'Normal') ?? (current.priority || 'Normal')
-  const normPri = (pri || 'Normal').trim()
-  const valid = PRIORITIES.includes(normPri) ? normPri : 'Normal'
-  setLaneMeta(lane.key, { description: desc, priority: valid })
+  laneMetaDraft.value = {
+    description: current.description || '',
+    priority: current.priority || 'Normal'
+  }
+  editingLaneKey.value = lane.key
+}
+
+function cancelLaneMetaEdit() {
+  editingLaneKey.value = null
+}
+
+function saveLaneMeta(lane) {
+  const draft = laneMetaDraft.value || {}
+  const rawPri = (draft.priority || 'Normal').trim()
+  const validPri = PRIORITIES.includes(rawPri) ? rawPri : 'Normal'
+  setLaneMeta(lane.key, {
+    description: draft.description || '',
+    priority: validPri
+  })
+  editingLaneKey.value = null
+}
+
+function isEditingLaneMeta(laneKey) {
+  return editingLaneKey.value === laneKey
 }
 // --- Lane description clamp/expand state ---
 const expandedLanes = ref({})
@@ -266,12 +326,38 @@ const swimlanes = ref([])
 const loading = ref(false)
 const error = ref('')
 
-// --- toasts ---
 const toasts = ref([])
-function notify(msg, type='info', ttl=3000){
+
+function notify (msg, type = 'info', ttl = 3000) {
   const id = Math.random().toString(36).slice(2)
-  toasts.value.push({id,msg,type})
-  setTimeout(()=>{ toasts.value = toasts.value.filter(t=>t.id!==id) }, ttl)
+  toasts.value.push({ id, msg, type })
+  setTimeout(() => {
+    toasts.value = toasts.value.filter(t => t.id !== id)
+  }, ttl)
+}
+
+// Try to extract a human-friendly error message from a fetch Response
+async function extractErrorMessage (res) {
+  if (!res) return 'Unknown error'
+  try {
+    const text = await res.text()
+    if (!text) return `${res.status} ${res.statusText || 'Error'}`
+    try {
+      const data = JSON.parse(text)
+      if (typeof data === 'string') return data
+      if (data.detail) {
+        return typeof data.detail === 'string'
+          ? data.detail
+          : JSON.stringify(data.detail)
+      }
+      if (data.message) return data.message
+      return text
+    } catch {
+      return text
+    }
+  } catch {
+    return `${res.status} ${res.statusText || 'Error'}`
+  }
 }
 
 // DEV: Surface global errors as toasts
@@ -410,16 +496,44 @@ function loadCustomLanes() {
   try { return JSON.parse(localStorage.getItem(customLanesKey()) || '[]') } catch { return [] }
 }
 function saveCustomLanes(names) { localStorage.setItem(customLanesKey(), JSON.stringify(names)) }
-function addLane() {
-  const label = window.prompt(`Add ${groupBy.value === 'project_code' ? 'Project' : 'Activity'} name:`)?.trim()
-  if (!label) return
+const showLaneInput = ref(false)
+const laneInput = ref('')
+
+function beginAddLane () {
+  laneInput.value = ''
+  showLaneInput.value = true
+}
+
+function cancelAddLane () {
+  showLaneInput.value = false
+  laneInput.value = ''
+}
+
+function confirmAddLane () {
+  const label = laneInput.value.trim()
+  if (!label) {
+    // Nothing entered; just close
+    showLaneInput.value = false
+    return
+  }
+
   const exists = swimlanes.value.some(l => l.key === label || l.title === label)
   if (!exists) {
     const lane = buildEmptySwimlane(label, label)
     swimlanes.value = [lane, ...swimlanes.value]
   }
+
   const names = loadCustomLanes()
-  if (!names.includes(label)) { names.push(label); saveCustomLanes(names) }
+  if (!names.includes(label)) {
+    names.push(label)
+    saveCustomLanes(names)
+  }
+
+  showLaneInput.value = false
+  laneInput.value = ''
+}
+function addLane() {
+  beginAddLane()
 }
 
 // Create / Update / Delete
@@ -439,7 +553,10 @@ async function saveCard(payload) {
         notes: `[prio:${(payload.priority || 'Normal').toLowerCase()}]` + (payload.notes ? ` ${payload.notes}` : '')
       })
     })
-    if (!res.ok) return notify(`Failed to update: ${await res.text()}`, 'error')
+    if (!res.ok) {
+      const msg = await extractErrorMessage(res)
+      return notify(`Failed to update: ${msg}`, 'error', 6000)
+    }
   } else {
     const res = await apiFetch(`${API_BASE}/api/time-entries/`, {
       method: 'POST',
@@ -453,7 +570,10 @@ async function saveCard(payload) {
         notes: `[prio:${(payload.priority || 'Normal').toLowerCase()}]` + (payload.notes ? ` ${payload.notes}` : '')
       })
     })
-    if (!res.ok) return notify(`Failed to create: ${await res.text()}`, 'error')
+    if (!res.ok) {
+      const msg = await extractErrorMessage(res)
+      return notify(`Failed to create: ${msg}`, 'error', 6000)
+    }
   }
   await load()
   await loadProjects()
@@ -468,7 +588,10 @@ async function deleteCard(lane, col, card) {
     method: 'DELETE',
     headers: { 'X-CSRF-Token': getCsrf() }
   })
-  if (!res.ok) return notify(`Failed to delete: ${await res.text()}`, 'error')
+  if (!res.ok) {
+    const msg = await extractErrorMessage(res)
+    return notify(`Failed to delete: ${msg}`, 'error', 6000)
+  }
   await load()
   await loadProjects()
 }
@@ -526,6 +649,16 @@ function colHours(dayKey) {
 }
 function laneHours(lane) {
   return lane.columns.reduce((tot, c) => tot + c.cards.reduce((s, x) => s + hoursBetweenRounded(x.start_utc, x.end_utc), 0), 0)
+}
+function laneEntryCount (lane) {
+  try {
+    return lane.columns.reduce(
+      (tot, c) => tot + (c.cards ? c.cards.length : 0),
+      0
+    )
+  } catch {
+    return 0
+  }
 }
 function cellHours(lane, dayKey) {
   const col = lane.columns.find(c => c.dayKey === dayKey)
@@ -604,10 +737,29 @@ watch([currentWeekStart, groupBy], () => { load() })
           <div class="bar"><i :style="{ width: (weeklyPct*100)+'%' }"></i></div>
           <span>{{ fmtH(weeklyHours, 2) }} / {{ TARGET_WEEKLY_HOURS }} h</span>
         </div>
-        <button type="button" @click="addLane">
-          {{ groupBy === 'project_code' ? 'Add Project' : 'Add Activity' }}
-        </button>
-        <button type="button" @click="toggleTheme" :title="theme==='dark' ? 'Switch to Light' : 'Switch to Dark'">
+                <div v-if="runningLaneTitle" class="running-pill">
+          Running: <span class="running-pill__name">{{ runningLaneTitle }}</span>
+        </div>
+                <div class="toolbar__add">
+          <button type="button" @click="addLane">
+            {{ groupBy === 'project_code' ? 'Add Project' : 'Add Activity' }}
+          </button>
+          <div v-if="showLaneInput" class="toolbar__add-inline">
+            <input
+              v-model="laneInput"
+              type="text"
+              :placeholder="groupBy === 'project_code' ? 'Project name' : 'Activity name'"
+              @keyup.enter="confirmAddLane"
+            />
+            <button type="button" class="mini" @click="confirmAddLane">OK</button>
+            <button type="button" class="mini" @click="cancelAddLane">Cancel</button>
+          </div>
+        </div>
+        <button
+          type="button"
+          @click="toggleTheme"
+          :title="theme==='dark' ? 'Switch to Light' : 'Switch to Dark'"
+        >
           {{ theme==='dark' ? '☀︎' : '🌙' }}
         </button>
       </div>
@@ -638,23 +790,73 @@ watch([currentWeekStart, groupBy], () => { load() })
             <div class="focus__lanehead">
               <div class="lane-title">
                 <strong>{{ pair.lane.title }}</strong>
-                <span v-if="getLaneMeta(pair.lane.key).priority"
-                      class="badge"
-                      :class="'p-' + (getLaneMeta(pair.lane.key).priority || 'Normal').toLowerCase()">
+                <span
+                  v-if="getLaneMeta(pair.lane.key).priority"
+                  class="badge"
+                  :class="'p-' + (getLaneMeta(pair.lane.key).priority || 'Normal').toLowerCase()"
+                >
                   {{ getLaneMeta(pair.lane.key).priority }}
+                </span>
+                <span
+                  v-if="isLaneRunning(pair.lane)"
+                  class="badge badge--running"
+                >
+                  Running
                 </span>
               </div>
               <div class="lane-actions">
-                <button class="mini icon"
-                        @click="isLaneRunning(pair.lane) ? stopTimer() : startLaneTimer(pair.lane)"
-                        :title="isLaneRunning(pair.lane) ? 'Stop timer' : 'Start timer'">
+                <button
+                  class="mini icon"
+                  @click="isLaneRunning(pair.lane) ? stopTimer() : startLaneTimer(pair.lane)"
+                  :title="isLaneRunning(pair.lane) ? 'Stop timer' : 'Start timer'"
+                >
                   {{ isLaneRunning(pair.lane) ? '■' : '▶︎' }}
                 </button>
-              <button class="mini icon" @click="editLaneMeta(pair.lane)" title="Edit project settings">⋯</button>
-                <button v-if="laneVisibleOnDayByProjects(pair.lane.key, pair.col.dayKey)" class="mini icon" @click="addCard(pair.lane, pair.col)" title="Add card">＋</button>
+                <button
+                  class="mini icon"
+                  @click="editLaneMeta(pair.lane)"
+                  title="Edit project settings"
+                >
+                  ⋯
+                </button>
+                <button
+                  v-if="laneVisibleOnDayByProjects(pair.lane.key, pair.col.dayKey)"
+                  class="mini icon"
+                  @click="addCard(pair.lane, pair.col)"
+                  title="Add card"
+                >
+                  ＋
+                </button>
               </div>
             </div>
-            <div v-if="getLaneMeta(pair.lane.key).description" class="focus__lanedesc">
+
+            <div
+              v-if="isEditingLaneMeta(pair.lane.key)"
+              class="lane-meta-editor lane-meta-editor--focus"
+            >
+              <label class="lane-meta-editor__field">
+                <span>Priority</span>
+                <select v-model="laneMetaDraft.priority">
+                  <option v-for="p in PRIORITIES" :key="p" :value="p">{{ p }}</option>
+                </select>
+              </label>
+              <label class="lane-meta-editor__field">
+                <span>Description</span>
+                <textarea
+                  v-model="laneMetaDraft.description"
+                  rows="2"
+                  placeholder="What does this lane represent?"
+                ></textarea>
+              </label>
+              <div class="lane-meta-editor__actions">
+                <button type="button" class="mini" @click="saveLaneMeta(pair.lane)">Save</button>
+                <button type="button" class="mini" @click="cancelLaneMetaEdit">Cancel</button>
+              </div>
+            </div>
+            <div
+              v-else-if="getLaneMeta(pair.lane.key).description"
+              class="focus__lanedesc"
+            >
               {{ getLaneMeta(pair.lane.key).description }}
             </div>
             <draggable
@@ -702,27 +904,41 @@ watch([currentWeekStart, groupBy], () => { load() })
         <!-- Swimlane rows -->
         <template v-for="lane in swimlanes" :key="lane.key">
         <div class="cell cell--rowhead">
-          <article class="projcard">
+          <article
+            class="projcard"
+            :class="'prio-' + String((getLaneMeta(lane.key).priority || 'Normal')).toLowerCase()"
+          >
             <!-- Row 1: color dot + project name -->
             <header class="projcard__head">
-              <span
-                class="prio-dot"
-                :class="('p-' + (getLaneMeta(lane.key).priority || 'Normal').toLowerCase())"
-                :title="getLaneMeta(lane.key).priority || 'Normal'">
-              </span>
               <h4
                 class="title"
                 :title="lane.title + (laneDesc(lane.key) ? ' — ' + laneDesc(lane.key) : '')"
               >
                 {{ lane.title }}
               </h4>
+              <span
+                v-if="isLaneRunning(lane)"
+                class="projcard__running-icon"
+                title="Timer running"
+                aria-label="Timer running"
+              >
+                🌀
+              </span>
             </header>
           
-            <!-- Row 2: hours -->
+            <!-- Row 2: hours + summary + running icon -->
             <div class="projcard__hoursrow">
               <span class="projcard__hours-pill">
                 {{ fmtH(laneHours(lane), 2) }} h
               </span>
+            
+              <span
+                v-if="laneEntryCount(lane)"
+                class="projcard__entries"
+              >
+                {{ laneEntryCount(lane) }} entr<span v-if="laneEntryCount(lane) !== 1">ies</span>
+              </span>
+            
             </div>
           
             <!-- Row 3: buttons -->
@@ -745,6 +961,29 @@ watch([currentWeekStart, groupBy], () => { load() })
                 </button>
               </div>
             </footer>
+            <div
+              v-if="isEditingLaneMeta(lane.key)"
+              class="lane-meta-editor lane-meta-editor--row"
+            >
+              <label class="lane-meta-editor__field">
+                <span>Priority</span>
+                <select v-model="laneMetaDraft.priority">
+                  <option v-for="p in PRIORITIES" :key="p" :value="p">{{ p }}</option>
+                </select>
+              </label>
+              <label class="lane-meta-editor__field">
+                <span>Description</span>
+                <textarea
+                  v-model="laneMetaDraft.description"
+                  rows="2"
+                  placeholder="Short description for this lane"
+                ></textarea>
+              </label>
+              <div class="lane-meta-editor__actions">
+                <button type="button" class="mini" @click="saveLaneMeta(lane)">Save</button>
+                <button type="button" class="mini" @click="cancelLaneMetaEdit">Cancel</button>
+              </div>
+            </div>
           </article>
         </div>
 
@@ -849,67 +1088,194 @@ watch([currentWeekStart, groupBy], () => { load() })
 
 <style scoped>
 /*
-  Knowledge Drop — Styles in this file
+  TimeBoard styles
   - Board chrome: header/nav/toolbars and progress bar
   - Grid layout: weekly matrix cells, row headers, drag/drop styling
-  - Focus (today) panel: expanded cards and plan textarea
-  - Simple layout: lane columns with stacked entries and CTA when empty
-  - Cards inside lists use :deep(.tcard) to tweak visuals without coupling to TimeCard internals
-  Notes: keep selectors narrow; prefer utility blocks over deep nesting; respect the global CSS vars in App.vue.
+  - Focus (today) panel
+  - Simple layout: per-day columns
+  - Toast notifications
 */
-.board { max-width: var(--container); margin: 0 auto; padding: 12px; }
+
+/* Shell / board chrome */
+.board {
+  max-width: var(--container);
+  margin: 0 auto;
+  padding: 12px;
+}
+
 .board__header {
-  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px;
-  position: sticky; top: 0; z-index: 10; padding: 10px 0 12px; background: var(--bg);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 10px 0 12px;
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
+
 .board__sectiontitle {
   margin: 4px 6px 8px;
-  font-size: 0.9rem;                 /* smaller than the Logger brand */
+  font-size: 0.9rem;
   font-weight: 650;
-  letter-spacing: 0.14em;            /* more "label-like" tracking */
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--muted);               /* keep it secondary to the brand */
+  color: var(--muted);
 }
-.nav { display: flex; align-items: center; gap: 6px; }
+
+/* Top nav + toolbar */
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .nav button {
-  padding: .36rem .55rem;
+  padding: 0.36rem 0.55rem;
   color: var(--primary);
   border: 1px solid var(--border);
   background: var(--btn-blue-bg);
   border-radius: 10px;
   cursor: pointer;
 }
-.nav button:hover { background: var(--btn-blue-bg-hover); }
-.range { margin-left: .4rem; font-weight: 700; color: var(--text); }
-.toolbar { display: flex; align-items: center; gap: 12px; }
+
+.nav button:hover {
+  background: var(--btn-blue-bg-hover);
+}
+
+.range {
+  margin-left: 0.4rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .toolbar button {
-  padding: .36rem .55rem;
+  padding: 0.36rem 0.55rem;
   color: var(--primary);
   border: 1px solid var(--border);
   background: var(--btn-blue-bg);
   border-radius: 10px;
   cursor: pointer;
 }
-.toolbar button:hover { background: var(--btn-blue-bg-hover); }
-/* Compact icon-sized buttons used for “…” and “＋” */
+
+.toolbar button:hover {
+  background: var(--btn-blue-bg-hover);
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+select {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.3rem 0.45rem;
+}
+
+/* Add lane inline input */
+.toolbar__add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbar__add-inline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbar__add-inline input {
+  padding: 0.3rem 0.45rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  min-width: 180px;
+}
+
+/* Small icon buttons */
 .mini {
-  padding: .2rem .45rem;
+  padding: 0.2rem 0.45rem;
   border: 1px solid var(--border);
   background: var(--btn-blue-bg);
   color: var(--primary);
   border-radius: 8px;
   cursor: pointer;
 }
-.mini:hover { background: var(--btn-blue-bg-hover); }
-.mini.icon { padding:.2rem; width:28px; height:28px; display:inline-grid; place-items:center; border-radius:10px; }
-.group { display: flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 600; }
-select { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: .3rem .45rem; }
-.goal { display: flex; align-items: center; gap: 8px; }
-.goal .bar { width: 180px; height: 8px; border-radius: 999px; background: #e2e8f0; overflow: hidden; border: 1px solid var(--border); }
-.goal .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--primary), var(--accent)); }
-.goal span { color: var(--muted); font-weight: 700; }
 
+.mini:hover {
+  background: var(--btn-blue-bg-hover);
+}
+
+.mini.icon {
+  padding: 0.2rem;
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 10px;
+}
+
+/* Weekly goal bar */
+.goal {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.goal .bar {
+  width: 180px;
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.goal .bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+}
+
+.goal span {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+/* Running lane pill (toolbar) */
+.running-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, var(--primary) 40%);
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.running-pill__name {
+  font-weight: 600;
+}
+
+/* Weekly board scroller */
 .board__scroller {
   margin-top: 6px;
   padding: 10px 10px 14px;
@@ -920,15 +1286,16 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
   overflow: auto;
 }
 
-/* Spreadsheet-style: fixed row header + minimum width per day */
+/* Spreadsheet-style weekly grid */
 .grid {
   --rowhead-w: 170px;
   display: grid;
-  grid-template-columns: var(--rowhead-w) repeat(7, minmax(130px, 1fr));
+  grid-template-columns: var(--rowhead-w) repeat(7, minmax(140px, 1fr));
   gap: 8px;
   align-items: start;
   padding: 6px 0;
 }
+
 .cell {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -938,13 +1305,49 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
   padding: 26px 6px 8px;
 }
 
+/* Container for stacked compact cards – behaves like a file-folder stack */
+.cell .droplist {
+  margin-top: 10px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0; /* overlap provides the separation */
+}
+
+.cell .droplist :deep(.tcard.compact) {
+  position: relative;
+  z-index: 1;
+  box-shadow: var(--shadow-sm);
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 0.75rem 0.8rem 0.7rem 0.8rem;
+  min-height: 56px;
+
+  /* Folder-stack overlap: each card tucks slightly under the one above */
+  margin-top: -18px;
+  transition:
+    margin-top 0.15s ease,
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+/* First card in the stack starts flush with the lane */
+.cell .droplist :deep(.tcard.compact:first-child) {
+  margin-top: 0;
+}
+
 .cell:hover {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 25%, transparent);
   border-color: color-mix(in srgb, var(--border) 60%, var(--primary) 40%);
 }
 
-.cell--head { background: transparent; border: none; min-height: auto; }
-/* Collapse the top-left header spacer so it doesn’t look like a random pill */
+.cell--head {
+  background: transparent;
+  border: none;
+  min-height: auto;
+}
+
+/* Collapse top-left header spacer */
 .grid > .cell.cell--head:first-child {
   padding: 0;
   min-height: 0;
@@ -952,15 +1355,18 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
   border: none;
   box-shadow: none;
 }
-.cell--rowhead { position: sticky; left: 0; z-index: 5; background: var(--panel); border-right: 1px solid var(--border); }
-/* Row header cells: tighter padding so project cards sit comfortably */
+
+/* Sticky project row headers */
 .cell--rowhead {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
   padding: 8px 6px 8px;
-  overflow: hidden;
+  overflow: visible; /* let meta editor expand */
 }
 
-
-.cell__empty { pointer-events: none; }
 .dayhead {
   display: flex;
   align-items: center;
@@ -969,318 +1375,45 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
   border-bottom: 1px solid var(--border);
   color: var(--muted);
   font-weight: 600;
-  font-size: .88rem;
-  white-space: nowrap;   /* keep all on one row */
+  font-size: 0.88rem;
+  white-space: nowrap;
   gap: 6px;
 }
 
 .dayhead strong {
-  letter-spacing: .01em;
+  letter-spacing: 0.01em;
   font-weight: 600;
 }
 
 .dayhead small {
   font-weight: 600;
-  opacity: .9;
-  font-size: .8rem;
+  opacity: 0.9;
+  font-size: 0.8rem;
   flex-shrink: 0;
 }
 
-
-/* Project row header cards in the weekly grid */
-.projcard {
-  display: grid;
-  grid-template-rows: auto auto auto; /* title, hours row, buttons */
-  align-content: space-between;
-  gap: 4px;
-  padding: 8px 8px 6px;
-  border-radius: calc(var(--radius) - 4px);
-  background: color-mix(in srgb, var(--panel-2) 75%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  box-shadow: var(--shadow-sm);
-}
-.projcard__head {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  min-width: 0;
-}
-.projcard__head .prio-dot {
-  margin-top: 3px;
-  flex-shrink: 0;
-}
-.projcard__head .title {
-  margin: 0;
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--text);
-  line-height: 1.25;
-  /* allow wrapping, but clamp to 2 lines so row heights stay reasonable */
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
-.projcard__hoursrow {
-  margin-top: 2px;
-}
-.projcard__hours-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.1rem 0.6rem;
-  font-size: 0.82rem;
+/* Per-cell summary + add button */
+.cell__sum {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  font-size: 0.78rem;
   font-weight: 600;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--btn-blue-bg) 85%, transparent);
   color: var(--muted);
-}
-
-.projcard__foot {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.35rem;
-  margin-top: 4px;
-}
-.projcard__foot .spacer {
-  flex: 1 1 auto;
-}
-.projcard__foot .actions__icons {
-  display: inline-flex;
-  gap: 0.25rem;
-}
-
-.badge { font-size: .72rem; padding: .1rem .45rem; border-radius: 999px; border: 1px solid var(--border); }
-.badge.p-low { background: #eef6ff; color: #1e3a8a; }
-.badge.p-normal { background: #eef2ff; color: #3730a3; }
-.badge.p-high { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
-.badge.p-critical { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
-
-.cell__sum { position: absolute; top: 6px; left: 6px; font-size: .78rem;
-             padding: .1rem .35rem; background: #edf2ff; border: 1px solid var(--border);
-             border-radius: 8px; color: #1e3a8a; }
-
-.focus__lanedesc { color: var(--muted); font-size: .85rem; padding: 6px 10px 0; }
-.cell__actions { position: absolute; top: 6px; right: 6px; }
-.cell__actions .mini { font-size: 16px; padding: .15rem .45rem; line-height: 1.1; }
-
-/* Default droplist cards (focus + simple layouts) */
-.droplist :deep(.tcard) {
-  background: var(--panel);
-  color: var(--text);
-  border-color: var(--border);
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
-}
-
-/* Weekly grid: make cells read like a spreadsheet */
-.cell .droplist {
-  margin-top: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;               /* clearer separation between entries */
-}
-
-/* Inside the weekly grid, render compact cards as light pills so each entry is clearly distinct */
-.cell .droplist :deep(.tcard.compact) {
-  box-shadow: var(--shadow-sm);
-  background: color-mix(in srgb, var(--panel-2) 85%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  border-radius: 10px;
-  padding: 6px 8px;
-  min-height: auto;
-}
-
-/* In weekly grid, reflow compact header for 3 columns (times+label | hours | edit) */
-.cell .droplist :deep(.tcard__head--compact) {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: .35rem;
   padding: 0;
+  background: transparent;
+  border: none;
 }
 
-/* Hide drag handle in weekly view to keep the row clean */
-.cell .droplist :deep(.handle) {
-  display: none;
+.cell__actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
 }
 
-/* Let the times block use the full available width in each row */
-.cell .droplist :deep(.tcard__head--compact .times) {
-  min-width: 0;
-}
-
-/* In weekly grid, allow time range and label to wrap instead of truncating */
-.cell .droplist :deep(.times__range),
-.cell .droplist :deep(.times__label) {
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
-  line-height: 1.2;
-}
-
-/* Slightly tone down font size in the grid so rows read cleanly */
-.cell .droplist :deep(.times__range) {
-  font-size: .8rem;
-}
-.cell .droplist :deep(.times__label) {
-  font-size: .75rem;
-}
-
-/* Edit icon: compact but still clickable */
-.cell .droplist :deep(.edit-compact) {
-  padding: .12rem .3rem;
-  border-radius: 6px;
-}
-
-/* Drag classes for better feedback */
-:global(.drag-ghost)    { opacity: .6; transform: rotate(2deg); }
-:global(.drag-chosen)   { box-shadow: var(--shadow-md) !important; }
-:global(.drag-dragging) { cursor: grabbing; }
-
-.error { color: #b91c1c; }
-
-/* --- Focus (enlarged current-day column) --- */
-.focus { width: 100%; margin: 12px 0 16px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
-.focus--inboard { max-width: 100%; }
-.focus__header { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 14px; border-bottom: 1px solid var(--border); }
-.focus__hours { color: var(--muted); font-weight: 700; }
-.focus__layout { position: relative; display: grid; align-items: start; grid-template-columns: 340px 1fr; gap: 16px; padding: 12px; }
-@media (max-width: 1100px) { .focus__layout { grid-template-columns: 1fr; } }
-.focus__plan { display: grid; gap: 8px; position: sticky; top: 0; align-self: start; z-index: 0;}
-.focus__label { font-weight: 700; color: var(--muted); display: block; margin-bottom: .5rem;}
-.focus__textarea { width: 100%; min-height: 160px; resize: vertical; padding: .6rem .7rem; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); color: var(--text); }
-.focus__hint { color: var(--muted); }
-.focus__col { display: grid; gap: 12px; position: relative; z-index: 1;}
-.focus__lane { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
-.focus__lanehead { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--border); font-weight: 700; }
-.focus__droplist { display: grid; gap: 10px; padding: 10px; max-height: none; position: relative; z-index: 1;}
-.focus :deep(.tcard) { box-shadow: var(--shadow-md); }
-
-.toastbox{ position:sticky; top:8px; z-index:20; display:grid; gap:6px; justify-items:end; }
-.toast{ background:var(--panel); border:1px solid var(--border); color:var(--text); padding:.45rem .6rem; border-radius:10px; box-shadow:var(--shadow-sm); }
-.toast.success{ border-color:#16a34a; }
-.toast.error{ border-color:#ef4444; }
-
-/* Compact project card shown in the left row header */
-.projcard{
-  display:grid; grid-template-rows:auto 1fr auto;
-  gap:8px; background:var(--panel); border-radius:10px; padding:10px;
-  min-height:110px;
-}
-.projcard__head{
-  display:grid; grid-template-columns:auto 1fr auto;
-  align-items:center; gap:8px;
-}
-.projcard__head .title{
-  margin:0; font-size:.98rem; font-weight:800;
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-}
-.projcard__head .hours{ color:var(--muted); font-weight:700; }
-/* Hide project description in weekly grid row header */
-.projcard__body { display: none; }
-.projcard__body .desc{ color:var(--muted); margin:0; }
-.projcard__body .desc.clamped{
-  display:-webkit-box; -webkit-box-orient:vertical; overflow:hidden;
-}
-.projcard__foot{ display:flex; justify-content:flex-end; gap:.35rem; }
-.projcard .link.more{
-  background:transparent; border:none; color:var(--primary);
-  padding:0; cursor:pointer;
-}
-
-/* color-only priority dot (same palette as TimeCard) */
-.prio-dot { width:10px; height:10px; border-radius:999px; display:inline-block; border:1px solid var(--border); }
-.prio-dot.p-low { background:#93c5fd; border-color:#93c5fd; }
-.prio-dot.p-normal { background:#a5b4fc; border-color:#a5b4fc; }
-.prio-dot.p-high { background:#fdba74; border-color:#fdba74; }
-.prio-dot.p-critical { background:#fca5a5; border-color:#fca5a5; }
-
-
-/* --- Simple layout styles (cardy) --- */
-.simple { display: grid; gap: 16px; margin-top: 12px; }
-
-/* Day chips */
-.simple__days {
-  display: flex; gap: 8px; flex-wrap: wrap;
-  position: sticky; top: 64px; z-index: 2;
-}
-.simple__daybtn {
-  display: inline-flex; align-items: baseline; gap: 6px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
-  border-radius: 999px;
-  padding: .35rem .7rem;
-  cursor: pointer;
-  box-shadow: var(--shadow-sm);
-}
-.simple__daybtn.active { background: var(--btn-blue-bg); }
-
-/* Projects/activities as columns */
-.simple__lanes {
-  display: grid;
-  grid-auto-flow: column;              /* lay lanes side-by-side as columns */
-  grid-auto-columns: minmax(260px, 1fr); /* each lane column width */
-  gap: 16px;
-  align-items: start;
-  overflow-x: auto;                    /* scroll horizontally if many lanes */
-  padding-bottom: 4px;
-}
-.simple__lane {
-  display: grid;
-  grid-template-rows: auto 1fr;  /* header + entries take remaining height */
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 14px;
-  box-shadow: var(--shadow-sm);
-  min-height: 280px;
-}
-.simple__lanehead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.simple__lanehead .title { margin: 0; font-size: 1.05rem; }
-.simple__lanehead .right { display: inline-flex; gap: 6px; align-items: center; }
-.badge.hours { background: var(--btn-blue-bg); border: 1px solid var(--border); }
-
-/* Entries container: vertical stack within each lane column */
-.simple__entries { display: grid; grid-template-rows: 1fr; }
-.simple__droplist {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: 1fr;   /* single column of entry cards */
-  align-items: start;
-  overflow-y: auto;
-  max-height: 60vh;              /* keep columns tidy; adjust as needed */
-}
-
-/* Keep each TimeCard looking like a small card */
-.simple__droplist :deep(.tcard) {
-  background: var(--panel);
-  border-color: var(--border);
-  box-shadow: var(--shadow-sm);
-  border-radius: 10px;
-  min-height: 64px;
-}
-
-/* --- Auth screen --- */
-.auth { max-width: 520px; margin: 2rem auto; padding: 1rem; }
-.auth__card { border: 1px solid var(--border); border-radius: 12px; padding: 1rem; background: var(--panel); box-shadow: var(--shadow-sm); }
-.auth__form { display: grid; gap: .6rem; margin-top: .5rem; }
-.auth__form label { display: grid; gap: .25rem; }
-.auth input { padding: .5rem .6rem; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); color: var(--text); }
-.auth input::placeholder { color: color-mix(in srgb, var(--muted) 70%, transparent); }
-.auth input:focus { outline: 2px solid color-mix(in srgb, var(--primary) 60%, transparent); }
-.auth button { padding: .5rem .8rem; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
-.auth .hint { margin-top: .6rem; }
-.auth .link { background: transparent; border: none; color: var(--primary); cursor: pointer; padding: 0; }
-
-/* Project lane cards (row headers in the weekly grid) */
+/* Row-header project card */
 .projcard {
+  position: relative;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -1290,6 +1423,33 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
   background: color-mix(in srgb, var(--panel-2) 92%, transparent);
   border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
   box-shadow: var(--shadow-sm);
+  overflow: visible;
+}
+
+/* Folder-style strip at top of project card (color from priority) */
+.projcard::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 10px;
+  width: 64px;
+  height: 10px;
+  border-radius: 10px 10px 0 0;
+  background: color-mix(in srgb, var(--primary, #5b8cff) 20%, transparent);
+  opacity: 0.9;
+}
+
+.projcard.prio-low::before {
+  background: #93c5fd;
+}
+.projcard.prio-normal::before {
+  background: #a5b4fc;
+}
+.projcard.prio-high::before {
+  background: #fdba74;
+}
+.projcard.prio-critical::before {
+  background: #fca5a5;
 }
 
 .projcard__head {
@@ -1308,20 +1468,39 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
   white-space: nowrap;
 }
 
-.projcard__hoursrow {
-  margin-top: 4px;
+.projcard__running-icon {
+  font-size: 0.9rem;
+  flex-shrink: 0;
 }
 
-.projcard__hours-pill {
-  display: inline-flex;
+/* Project card hours row */
+.projcard__hoursrow {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 0.12rem 0.6rem;
-  font-size: 0.82rem;
-  font-weight: 600;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--btn-blue-bg) 80%, transparent);
+  gap: 4px;
+  margin-top: 2px;
+  font-size: 0.78rem;
   color: var(--muted);
+}
+
+/* Make daily total hours plain text (no pill) */
+.projcard__hours-pill {
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* Entry count text */
+.projcard__entries {
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
+  flex: 1;
+  text-align: right;
+  margin-right: 4px;
 }
 
 .projcard__foot {
@@ -1346,5 +1525,407 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 
 .projcard__foot .mini.icon:hover {
   background: var(--btn-blue-bg-hover);
+}
+
+/* Priority dot (matches TimeCard) */
+.prio-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+  border: 1px solid var(--border);
+}
+
+.prio-dot.p-low {
+  background: #93c5fd;
+  border-color: #93c5fd;
+}
+.prio-dot.p-normal {
+  background: #a5b4fc;
+  border-color: #a5b4fc;
+}
+.prio-dot.p-high {
+  background: #fdba74;
+  border-color: #fdba74;
+}
+.prio-dot.p-critical {
+  background: #fca5a5;
+  border-color: #fca5a5;
+}
+
+/* Lane meta inline editor */
+.lane-meta-editor {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-2) 85%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  display: grid;
+  gap: 4px;
+  border-top: 1px dashed var(--border);
+}
+
+.lane-meta-editor--focus {
+  margin: 4px 0 0;
+}
+
+.lane-meta-editor--row {
+  margin-top: 6px;
+}
+
+.lane-meta-editor__field {
+  display: grid;
+  gap: 2px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.lane-meta-editor__field select,
+.lane-meta-editor__field textarea {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.3rem 0.45rem;
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+.lane-meta-editor__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.lane-meta-editor textarea {
+  max-height: 160px;
+  resize: vertical;
+}
+
+/* Badges for priority (Today focus view) */
+.badge {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.badge.p-low {
+  background: #eef6ff;
+  color: #1e3a8a;
+}
+.badge.p-normal {
+  background: #eef2ff;
+  color: #3730a3;
+}
+.badge.p-high {
+  background: #fff7ed;
+  color: #9a3412;
+  border-color: #fed7aa;
+}
+.badge.p-critical {
+  background: #fef2f2;
+  color: #991b1b;
+  border-color: #fecaca;
+}
+
+.badge.hours {
+  /* Day total: plain text, no pill container */
+  background: transparent;
+  border: none;
+  padding: 0;
+  border-radius: 0;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* Focus (today) panel */
+.focus {
+  width: 100%;
+  margin: 12px 0 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.focus--inboard {
+  max-width: 100%;
+}
+
+.focus__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.focus__hours {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.focus__layout {
+  position: relative;
+  display: grid;
+  align-items: start;
+  grid-template-columns: 340px 1fr;
+  gap: 16px;
+  padding: 12px;
+}
+
+@media (max-width: 1100px) {
+  .focus__layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.focus__plan {
+  display: grid;
+  gap: 8px;
+  position: sticky;
+  top: 0;
+  align-self: start;
+  z-index: 0;
+}
+
+.focus__label {
+  font-weight: 700;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.focus__textarea {
+  width: 100%;
+  min-height: 160px;
+  resize: vertical;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.focus__col {
+  display: grid;
+  gap: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.focus__lane {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.focus__lanehead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 700;
+}
+
+.focus__lanedesc {
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 6px 10px 0;
+}
+
+.focus__droplist {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  max-height: none;
+  position: relative;
+  z-index: 1;
+}
+
+/* Draggable defaults for TimeCard in focus + grid */
+.droplist :deep(.tcard),
+.focus :deep(.tcard) {
+  background: var(--panel);
+  color: var(--text);
+  border-color: var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Drag feedback */
+:global(.drag-ghost) {
+  opacity: 0.6;
+  transform: rotate(2deg);
+}
+:global(.drag-chosen) {
+  box-shadow: var(--shadow-md) !important;
+}
+:global(.drag-dragging) {
+  cursor: grabbing;
+}
+
+/* Toasts */
+.toastbox {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 1200;
+  pointer-events: none;
+}
+
+.toast {
+  min-width: 260px;
+  max-width: 360px;
+  padding: 0.55rem 0.75rem;
+  border-radius: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  font-size: 0.85rem;
+  color: var(--text);
+  pointer-events: auto;
+  animation: toast-drop-in 0.18s ease-out;
+}
+
+.toast.info {
+  border-color: color-mix(in srgb, var(--border) 70%, var(--primary) 30%);
+}
+
+.toast.success {
+  border-color: #16a34a40;
+  background: #ecfdf3;
+  color: #166534;
+}
+
+.toast.error {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+@keyframes toast-drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) translateX(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) translateX(0);
+  }
+}
+
+/* Error text */
+.error {
+  color: #b91c1c;
+}
+
+/* --- Simple layout (per-day columns) --- */
+.simple {
+  display: grid;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+/* Day chips */
+.simple__days {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 64px;
+  z-index: 2;
+}
+
+.simple__daybtn {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+
+.simple__daybtn.active {
+  background: var(--btn-blue-bg);
+}
+
+/* Projects/activities as columns */
+.simple__lanes {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(260px, 1fr);
+  gap: 16px;
+  align-items: start;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.simple__lane {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: var(--shadow-sm);
+  min-height: 280px;
+}
+
+.simple__lanehead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.simple__lanehead .title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.simple__lanehead .right {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+/* Entries container in each lane */
+.simple__entries {
+  display: block;
+}
+
+/* Make entries stack and cascade like folders */
+.simple__droplist {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr;   /* single column of entry cards */
+  align-items: start;
+  overflow-y: auto;
+  max-height: 60vh;              /* keep columns tidy; adjust as needed */
+}
+
+/* Folder-style cascading stack for compact cards in Simple layout */
+.simple__droplist :deep(.tcard.compact) {
+  position: relative;
+  margin-top: -12px;        /* overlap cards so tabs cascade */
+  z-index: 1;
+}
+
+.simple__droplist :deep(.tcard.compact:first-child) {
+  margin-top: 0;            /* top card starts the stack */
+}
+
+/* Slight lift on hover so the active card is visually on top */
+.simple__droplist :deep(.tcard.compact:hover) {
+  z-index: 5;
 }
 </style>
