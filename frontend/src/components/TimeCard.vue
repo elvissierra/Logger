@@ -37,11 +37,11 @@ const props = defineProps({
   openOnMount: { type: Boolean, default: false },
   runningId: { type: String, default: null },
   nowTick: { type: Number, default: 0 },
-  compact: { type: Boolean, default: false },
-  heightPx: { type: Number, default: null }
+  compact: { type: Boolean, default: false }
 })
 const emit = defineEmits(['save', 'delete', 'start', 'stop'])
 const isRunning = computed(() => props.runningId && props.card.id === props.runningId)
+
 const showFullDesc = ref(false)
 const isClampedCandidate = computed(() => (props.card.description || '').length > 120)
 
@@ -157,16 +157,20 @@ function onStop(){ emit('stop', props.card) }
 <template>
   <article
     class="tcard"
-    :class="[{ editing, compact }, 'prio-' + String(card.priority || 'Normal').toLowerCase()]"
-    :style="(compact && !editing && heightPx != null)
-      ? { minHeight: (Number(heightPx) || 0) + 'px' }
-      : {}"
+    :class="[
+      { editing, compact },
+      'prio-' + String(card.priority || 'Normal').toLowerCase()
+    ]"
   >
     <!-- Full header (focus cards) -->
-    <header v-if="!compact" class="tcard__head">
-      <span class="handle" title="Drag to reorder" aria-label="Drag handle">☰</span>
+    <header v-if="!compact && !editing" class="tcard__head">
+      <span class="handle grip" title="Drag to reorder" aria-label="Drag handle">☰</span>
       <div class="tcard__title">
-        <span class="prio-dot" :class="('p-' + (card.priority || 'Normal').toLowerCase())" :title="card.priority || 'Normal'"></span>
+        <span
+          class="prio-dot"
+          :class="('p-' + (card.priority || 'Normal').toLowerCase())"
+          :title="card.priority || 'Normal'"
+        ></span>
         <strong class="title" :title="card.jobTitle || card.projectCode || 'Untitled'">
           {{ card.jobTitle || card.projectCode || 'Untitled' }}
         </strong>
@@ -175,90 +179,8 @@ function onStop(){ emit('stop', props.card) }
       <div class="hours" v-if="roundedDurationHours > 0">{{ fmtH(roundedDurationHours, 2) }} h</div>
     </header>
 
-
-    <!-- Compact (weekly deck) folder tab + folder face -->
-    <div
-      v-if="compact && !editing"
-      class="foldertab handle"
-      :class="('p-' + String(card.priority || 'Normal').toLowerCase())"
-      :title="card.jobTitle || card.projectCode || card.activity || 'Untitled'"
-    >
-      {{ card.jobTitle || card.projectCode || card.activity || 'Untitled' }}
-    </div>
-
-    <section
-      v-if="compact && !editing"
-      class="folderbody"
-      @dblclick="editing = true"
-    >
-      <div class="bodyTitle">
-        {{ card.jobTitle || card.projectCode || 'Untitled' }}
-      </div>
-
-      <div class="timeblock">
-        <div class="tstart">
-          {{ card.start_utc ? new Date(card.start_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--' }}
-        </div>
-        <div class="tend">
-          <span v-if="!isRunning && card.end_utc">
-            {{ new Date(card.end_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
-          </span>
-          <span v-else>Now</span>
-        </div>
-      </div>
-
-      <div class="deckActions" aria-label="Entry actions">
-        <button
-          class="deckBtn"
-          :title="isRunning ? 'Stop' : 'Start'"
-          :aria-label="isRunning ? 'Stop' : 'Start'"
-          @click.stop="isRunning ? onStop() : onStart()"
-        >
-          {{ isRunning ? '■' : '▶︎' }}
-        </button>
-        <button
-          class="deckBtn"
-          title="Options"
-          aria-label="Options"
-          @click.stop="editing = true"
-        >
-          ⋯
-        </button>
-        <button
-          class="deckBtn"
-          title="Add"
-          aria-label="Add"
-          disabled
-        >
-          ＋
-        </button>
-      </div>
-
-      <div class="pillrow">
-        <span class="pill urgency">
-          {{ (card.priority && card.priority !== 'Normal') ? card.priority : 'Urgency' }}
-        </span>
-        <span class="pill hours">
-          {{ fmtH(roundedDurationHours, 2) }} h
-        </span>
-      </div>
-    </section>
-
-    <!-- Full card body (focus area) shown when not editing) -->
-    <section v-else-if="!compact && !editing" class="tcard__body" @dblclick="editing = true">
-      <div class="meta" v-if="card.start_utc && card.end_utc">
-        <span class="time">
-          {{ new Date(card.start_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }} →
-          {{ new Date(card.end_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }}
-        </span>
-        <span class="sep">•</span>
-        <span class="hours">{{ fmtH(roundedDurationHours, 2) }} h</span>
-      </div>
-    </section>
-
-    <!-- Editor (appears for both compact and full when editing=true). step=900 enforces 15‑minute increments. -->
-    <section v-else class="tcard__edit" :class="{ 'tcard__edit--compact': compact }">
-      <!-- BASIC FIELDS -->
+    <!-- Editor (editing wins in all modes) -->
+    <section v-if="editing" class="tcard__edit" :class="{ 'tcard__edit--compact': compact }">
       <div class="grid grid--basic">
         <label>Job Title
           <input v-model="local.jobTitle" placeholder="Bridge Inspection" />
@@ -279,7 +201,6 @@ function onStop(){ emit('stop', props.card) }
         </div>
       </div>
 
-      <!-- TOGGLE -->
       <button
         type="button"
         class="link more toggle-adv"
@@ -288,7 +209,7 @@ function onStop(){ emit('stop', props.card) }
       >
         {{ showAdvanced ? 'Hide advanced ▲' : 'More fields ▸' }}
       </button>
-      <!-- ADVANCED (dropdown-style) -->
+
       <div v-show="showAdvanced" class="grid grid--advanced">
         <label>Urgency
           <select v-model="local.priority">
@@ -310,13 +231,99 @@ function onStop(){ emit('stop', props.card) }
         <button type="button" class="danger" @click="onDelete">Delete</button>
       </div>
     </section>
-    <footer v-if="!compact" class="tcard__foot">
-      <div class="spacer"></div>
+
+    <!-- Compact (weekly) ultra-basic card when not editing -->
+    <template v-else-if="compact">
+      <section class="compact" @dblclick="editing = true">
+        <div class="compact__top">
+          <span class="handle grip" title="Drag" aria-label="Drag handle">≡</span>
+          <div class="compact__titlewrap">
+            <div class="compact__meta">
+              <div
+                class="compact__metaLine compact__metaLine--title"
+                :title="card.jobTitle || 'Untitled'"
+              >
+                {{ card.jobTitle || 'Untitled' }}
+              </div>
+              <div
+                class="compact__metaLine"
+                :title="card.activity || ''"
+              >
+                {{ card.activity || '—' }}
+              </div>
+            </div>
+          </div>
+          <div class="compact__hours">{{ fmtH(roundedDurationHours, 2) }} h</div>
+        </div>
+
+        <div class="compact__times">
+          <div class="compact__timeRow">
+            <span class="val">
+              {{ card.start_utc ? new Date(card.start_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--' }}
+            </span>
+          </div>
+          <div class="compact__timeRow">
+            <span class="val">
+              <span v-if="!isRunning && card.end_utc">
+                {{ new Date(card.end_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+              </span>
+              <span v-else>Now</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="compact__notes" v-if="(card.description && String(card.description).trim()) || (card.notes && String(card.notes).trim())">
+          <div class="lbl">Notes</div>
+          <div class="val">
+            {{ [card.description, card.notes].filter(v => v && String(v).trim()).join('\n') }}
+          </div>
+        </div>
+
+        <div class="compact__bottom">
+          <span class="compact__pri" :class="('p-' + String(card.priority || 'Normal').toLowerCase())">
+            {{ card.priority || 'Normal' }}
+          </span>
+
+          <div class="compact__actions">
+            <button
+              class="compactBtn"
+              :title="isRunning ? 'Stop' : 'Start'"
+              :aria-label="isRunning ? 'Stop' : 'Start'"
+              @click.stop="isRunning ? onStop() : onStart()"
+            >
+              {{ isRunning ? '■' : '▶︎' }}
+            </button>
+            <button
+              class="compactBtn"
+              title="Edit"
+              aria-label="Edit"
+              @click.stop="editing = true"
+            >
+              ⋯
+            </button>
+          </div>
+        </div>
+      </section>
+    </template>
+
+    <!-- Full (focus) body when not editing -->
+    <section v-else class="tcard__body" @dblclick="editing = true">
+      <div class="meta" v-if="card.start_utc && card.end_utc">
+        <span class="time">
+          {{ new Date(card.start_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }} →
+          {{ new Date(card.end_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }}
+        </span>
+        <span class="sep">•</span>
+        <span class="hours">{{ fmtH(roundedDurationHours, 2) }} h</span>
+      </div>
+    </section>
+
+    <footer v-if="!compact && !editing" class="tcard__foot">
       <div class="actions__icons">
-        <button class="icon" :title="isRunning ? 'Stop' : 'Start'" :aria-label="isRunning ? 'Stop' : 'Start'" @click="isRunning ? onStop() : onStart()">
-          {{ isRunning ? '■' : '▶︎' }}
+        <button class="icon" type="button" @click="editing = true" title="Edit">Edit</button>
+        <button class="icon" type="button" @click="isRunning ? onStop() : onStart()" :title="isRunning ? 'Stop' : 'Start'">
+          {{ isRunning ? 'Stop' : 'Start' }}
         </button>
-        <button class="icon" title="Edit" aria-label="Edit" @click="editing = !editing">✎</button>
       </div>
     </footer>
   </article>
@@ -344,137 +351,126 @@ function onStop(){ emit('stop', props.card) }
   
   .tcard__body { color: var(--text, #374151); min-height: 52px; overflow: hidden; }
 
-/* ===== Compact Folder Card (Weekly Deck) ===== */
+/* ===== Compact (Weekly) Ultra-Basic Card ===== */
 .tcard.compact {
-  border-radius: 18px;
-  padding: 16px;
-  min-height: 172px;
+  display: block;
+  padding: 0;
+  border-radius: 12px;
+  min-height: 0;
+  height: auto;
   overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--border);
 }
 
-/* Priority tints for the folder face */
-.tcard.compact.prio-low { background: #93c5fd; border-color: #93c5fd; }
-.tcard.compact.prio-normal { background: #86efac; border-color: #86efac; }
-.tcard.compact.prio-high { background: #fdba74; border-color: #fdba74; }
-.tcard.compact.prio-critical { background: #fca5a5; border-color: #fca5a5; }
-
-/* Folder tab (used by older stacked entries; becomes the drag handle) */
-.foldertab {
-  position: absolute;
-  top: 10px;
-  left: 12px;
-  height: 44px;
-  width: 72%;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  padding: 0 14px;
-  border-radius: 18px;
-  font-weight: 850;
-  font-size: 1.05rem;
-  color: rgba(0,0,0,.75);
-  border: 1px solid rgba(0,0,0,.12);
-  box-shadow: 0 2px 0 rgba(0,0,0,.06);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: grab;
-  user-select: none;
-  z-index: 2;
-}
-.foldertab.p-low { background: #93c5fd; }
-.foldertab.p-normal { background: #86efac; }
-.foldertab.p-high { background: #fdba74; }
-.foldertab.p-critical { background: #fca5a5; }
-
-/* Folder face content (newest/top entry) */
-.folderbody {
-  position: relative;
-  width: 100%;
-  height: 100%;
+.compact {
+  padding: 10px;
+  display: grid;
+  gap: 8px;
 }
 
-.bodyTitle {
-  position: absolute;
-  top: 18px;
-  right: 16px;
-  font-weight: 900;
-  font-size: 1.35rem;
-  color: rgba(0,0,0,.75);
+.compact__top {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 8px;
 }
 
-.timeblock {
-  position: absolute;
-  left: 16px;
-  top: 78px;
+.compact__titlewrap {
+  min-width: 0;
+}
+
+.compact__meta {
   display: grid;
   gap: 2px;
-  font-variant-numeric: tabular-nums;
-  color: rgba(0,0,0,.75);
-}
-.timeblock .tstart,
-.timeblock .tend {
-  font-weight: 900;
-  font-size: 1.05rem;
+  font-size: 0.86rem;
+  color: var(--text);
+  line-height: 1.15;
 }
 
-.deckActions {
-  position: absolute;
-  right: 14px;
-  top: 92px;
-  display: grid;
+  .compact__metaLine {
+    font-weight: 650;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+.compact__metaLine--title {
+  font-weight: 800;
+  font-size: 0.92rem;
+}
+
+.compact__hours {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+
+
+
+.compact__bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 10px;
 }
 
-.deckBtn {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+.compact__pri {
+  font-size: 0.78rem;
+  font-weight: 750;
+  padding: 0.18rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(0,0,0,.12);
+  background: rgba(255,255,255,.55);
+  color: rgba(0,0,0,.72);
+  white-space: nowrap;
+}
+
+/* Priority colors (kept minimal) */
+.compact__pri.p-low { background: #eef6ff; border-color: #bfdbfe; color: #1e3a8a; }
+.compact__pri.p-normal { background: #ecfdf5; border-color: #bbf7d0; color: #065f46; }
+.compact__pri.p-high { background: #fff7ed; border-color: #fed7aa; color: #9a3412; }
+.compact__pri.p-critical { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+
+.compact__actions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+/* Compact action buttons (smaller than deck buttons for narrow cells) */
+.compactBtn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  margin: 0;
+  border-radius: 10px;
   border: 1px solid rgba(0,0,0,.12);
   background: rgba(255,255,255,.55);
   cursor: pointer;
   font-weight: 900;
   line-height: 1;
-}
-.deckBtn:hover { background: rgba(255,255,255,.7); }
-.deckBtn:disabled { opacity: .35; cursor: default; }
-
-.pillrow {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: 14px;
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.pill {
-  padding: 10px 14px;
-  border-radius: 999px;
-  background: rgba(255,255,255,.55);
-  border: 1px solid rgba(0,0,0,.12);
-  font-weight: 850;
-  color: rgba(0,0,0,.75);
-}
-
-.pill.hours {
-  min-width: 4.5rem;
-  text-align: center;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
 }
   .tcard__body p { margin: .25rem 0; word-break: break-word; overflow-wrap: anywhere; }
   
   .tcard__head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .6rem; }
-  .handle { cursor: grab; user-select: none; font-size: 1rem; line-height: 1; opacity: .7; }
+  .handle { cursor: grab; user-select: none; }
+  .handle.grip { font-size: 1rem; line-height: 1; opacity: .7; }
   .tcard__title { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
   .title { font-weight: 700; letter-spacing: .2px; }
   .chip { font-size: .75rem; padding: .15rem .45rem; border-radius: 999px; background: color-mix(in srgb, var(--primary, #5b8cff) 18%, transparent); color: var(--text, #111827); border: 1px solid var(--border, #e5e7eb); }
   .tcard__title { gap: .45rem; }
   .tcard__title .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hours { font-weight: 600; opacity: .9; }
-  .tcard.editing { 
-    background: var(--panel, #7282c2);
-    overflow: visible; 
+  .tcard.editing {
+    background: var(--panel);
+    overflow: visible;
   }
   /* color-only priority dot */
   .prio-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; border: 1px solid var(--border, #e5e7eb); }
@@ -536,14 +532,32 @@ function onStop(){ emit('stop', props.card) }
   input[type="datetime-local"]::-webkit-calendar-picker-indicator { padding: 0 .2rem; }
   input, textarea, select { font-variant-numeric: tabular-nums; }
   .actions { display: flex; gap: .4rem; justify-content: flex-end; }
-  button {
-    padding: .45rem .7rem; border: 1px solid var(--border, #d1d5db); border-radius: 8px; background: var(--panel-2, #f9fafb);
-    cursor: pointer; transition: background .15s ease, border-color .15s ease, transform .06s ease;
+  /* Default buttons for editor + full card actions only (do not affect compact deck buttons) */
+  .tcard__edit button,
+  .tcard__foot button {
+    padding: .45rem .7rem;
+    border: 1px solid var(--border, #d1d5db);
+    border-radius: 8px;
+    background: var(--panel-2, #f9fafb);
+    cursor: pointer;
+    transition: background .15s ease, border-color .15s ease, transform .06s ease;
   }
-  button:hover { background: #f0f2f6; }
-  button:active { transform: translateY(1px); }
-  button.primary { background: linear-gradient(180deg, var(--primary, #5b8cff), var(--primary-600, #3e6dff)); border-color: color-mix(in srgb, var(--border, #d1d5db) 40%, var(--primary, #5b8cff) 60%); color: #fff; }
-  button.danger { border-color: #ef4444; color: #b91c1c; }
+
+  .tcard__edit button:hover,
+  .tcard__foot button:hover { background: #f0f2f6; }
+
+  .tcard__edit button:active,
+  .tcard__foot button:active { transform: translateY(1px); }
+
+  .tcard__edit button.primary,
+  .tcard__foot button.primary {
+    background: linear-gradient(180deg, var(--primary, #5b8cff), var(--primary-600, #3e6dff));
+    border-color: color-mix(in srgb, var(--border, #d1d5db) 40%, var(--primary, #5b8cff) 60%);
+    color: #fff;
+  }
+
+  .tcard__edit button.danger,
+  .tcard__foot button.danger { border-color: #ef4444; color: #b91c1c; }
   .actions__icons { display: flex; gap: .35rem; }
   
   
@@ -561,40 +575,44 @@ function onStop(){ emit('stop', props.card) }
     padding: .3rem .45rem;
   }
   
-  .mini-meta {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    margin-top: 2px;
-    font-size: .72rem;
-    color: var(--muted, #6b7280);
-  }
-  .mini-meta__pri {
-    padding: .05rem .35rem;
-    border-radius: 999px;
-    border: 1px solid var(--border, #d1d5db);
-    font-weight: 600;
-  }
-  .mini-meta__pri.p-low {
-    background: #eef6ff;
-    color: #1e3a8a;
-    border-color: #bfdbfe;
-  }
-  .mini-meta__pri.p-normal { 
-    background: #ecfdf5;
-    color: #065f46; border-color: #bbf7d0;
-   }
-  .mini-meta__pri.p-high {
-    background: #fff7ed;
-    color: #9a3412;
-    border-color: #fed7aa;
-  }
-  .mini-meta__pri.p-critical {
-    background: #fef2f2;
-    color: #991b1b;
-    border-color: #fecaca;
-  }
-  .mini-meta__notes {
-    font-size: .8rem;
-  }
+
+/* Compact times: two rows, unlabeled */
+.compact__times {
+  display: grid;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.compact__timeRow {
+  display: block;
+}
+
+.compact__times .val {
+  color: var(--text);
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Optional notes in compact mode */
+.compact__notes {
+  display: grid;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.compact__notes .lbl {
+  color: var(--muted);
+  font-weight: 650;
+  font-size: 0.82rem;
+}
+
+.compact__notes .val {
+  white-space: pre-wrap;
+  color: var(--text);
+  font-size: 0.86rem;
+  line-height: 1.25;
+}
+
 </style>
