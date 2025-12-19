@@ -834,10 +834,11 @@ watch([currentWeekStart, groupBy], () => { load() })
               @change="onCellChange(lane, colFor(lane, selectedDayKey), $event)"
               @end="onReorderCell(lane, selectedDayKey)"
             >
-              <template #item="{ element }">
+              <template #item="{ element, index }">
                 <TimeCard
                   :card="element"
                   :compact="true"
+                  :tab-side="(index % 2 === 0) ? 'left' : 'right'"
                   :open-on-mount="element.__new === true"
                   :running-id="runningId"
                   :now-tick="nowTick"
