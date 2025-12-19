@@ -175,6 +175,7 @@ const PRIORITIES = props.priorities
                     :running-id="runningId"
                     :now-tick="nowTick"
                     :compact="true"
+                    :tab-side="(index % 2 === 0) ? 'left' : 'right'"
                     @start="startTimer"
                     @stop="stopTimer"
                     @save="saveCard"

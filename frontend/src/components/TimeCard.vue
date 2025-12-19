@@ -37,7 +37,8 @@ const props = defineProps({
   openOnMount: { type: Boolean, default: false },
   runningId: { type: String, default: null },
   nowTick: { type: Number, default: 0 },
-  compact: { type: Boolean, default: false }
+  compact: { type: Boolean, default: false },
+  tabSide: { type: String, default: 'left' } // 'left' | 'right'
 })
 const emit = defineEmits(['save', 'delete', 'start', 'stop'])
 const isRunning = computed(() => props.runningId && props.card.id === props.runningId)
@@ -234,7 +235,7 @@ function onStop(){ emit('stop', props.card) }
 
     <!-- Compact (weekly/simple) strict folder card when not editing -->
     <template v-else-if="compact">
-      <section class="folderCard" @dblclick="editing = true">
+      <section class="folderCard" :class="'folderCard--tab-' + (tabSide === 'right' ? 'right' : 'left')" @dblclick="editing = true">
         <!-- Folder tab (visual only) -->
         <div class="folderCard__tab" aria-hidden="true">
           <span class="handle grip folderCard__grip" title="Drag" aria-label="Drag handle">≡</span>
@@ -367,7 +368,7 @@ function onStop(){ emit('stop', props.card) }
 .folderCard__tab {
   position: absolute;
   top: 0;
-  left: 10px;        /* corner tab */
+  /* left: 10px;  -- moved to modifier classes */
   height: 18px;
   min-width: 54px;   /* tighter tab footprint */
   padding: 0 10px;
@@ -381,6 +382,16 @@ function onStop(){ emit('stop', props.card) }
   border-bottom: 0;
   border-top-left-radius: 14px;
   border-top-right-radius: 14px;
+}
+
+.folderCard--tab-left .folderCard__tab {
+  left: 10px;
+  right: auto;
+}
+
+.folderCard--tab-right .folderCard__tab {
+  right: 10px;
+  left: auto;
 }
 
 .folderCard__grip {
