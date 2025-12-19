@@ -168,7 +168,7 @@ const PRIORITIES = props.priorities
                 @change="onCellChange(lane, col, $event)"
                 @end="onReorderCell(lane, col.dayKey)"
               >
-                <template #item="{ element }">
+                <template #item="{ element, index }">
                   <TimeCard
                     :card="element"
                     :open-on-mount="element.__new === true"
@@ -205,10 +205,10 @@ const PRIORITIES = props.priorities
 
 /* Spreadsheet-style weekly grid */
 .grid {
-  --rowhead-w: 170px;
+  --rowhead-w: 190px;
   display: grid;
-  grid-template-columns: var(--rowhead-w) repeat(7, minmax(140px, 1fr));
-  gap: 8px;
+  grid-template-columns: var(--rowhead-w) repeat(7, minmax(220px, 1fr));
+  gap: 10px;
   align-items: start;
   padding: 6px 0;
 }
@@ -217,68 +217,22 @@ const PRIORITIES = props.priorities
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  min-height: 120px;
+  min-height: 320px;
   position: relative;
-  padding: 26px 6px 8px;
-  overflow: hidden;
+  padding: 26px 6px 10px;
+  overflow: visible;
   isolation: isolate;
 }
 
-/* Container for compact folder deck inside a cell */
+/* Container for compact entries inside a cell (simple list for now) */
 .cell .droplist {
-  margin-top: 10px;
-  position: relative;
-  display: block;
-  min-height: 176px; /* enough room for tabs + body */
-  padding: 0 8px 8px 2px;
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  padding: 0 6px 8px;
 }
 
-/* Every compact card is absolutely positioned in the deck */
-.cell .droplist :deep(.tcard.compact) {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(var(--stack-y, 0px));
-  transform: translateX(var(--stack-x, 0px));
-  margin: 0;
-  transition: transform .12s ease, box-shadow .12s ease;
-}
-
-/* Newest/front folder body */
-.cell .droplist :deep(.tcard.compact:nth-child(1)) { z-index: 40; --stack-x: 18px; --stack-y: 52px; }
-
-/* Older tabs peeking */
-.cell .droplist :deep(.tcard.compact:nth-child(2)) { z-index: 30; --stack-x: 92px;  --stack-y: 0px; }  /* right tab */
-.cell .droplist :deep(.tcard.compact:nth-child(3)) { z-index: 20; --stack-x: 0px;   --stack-y: 22px; } /* left-mid tab */
-.cell .droplist :deep(.tcard.compact:nth-child(4)) { z-index: 10; --stack-x: 0px;   --stack-y: 0px; }  /* top-left tab */
-
-/* Don’t let deep stacks explode the layout (cap visible items to 4) */
-.cell .droplist :deep(.tcard.compact:nth-child(n+5)) { display: none; }
-
-/* Weekly deck: only the newest shows the full folder body; older entries show tab-only */
-.cell .droplist :deep(.tcard.compact:nth-child(n+2) .folderbody) {
-  display: none !important;
-}
-
-.cell .droplist :deep(.tcard.compact:nth-child(n+2) .foldertab) {
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 44px;
-  border-radius: 18px;
-  justify-content: center;
-}
-
-/* Front card: hide its tab so the body reads as the folder face (Title 4) */
-.cell .droplist :deep(.tcard.compact:nth-child(1) .foldertab) {
-  display: none !important;
-}
-
-/* Hover lift on the front folder only */
-.cell .droplist :deep(.tcard.compact:nth-child(1):hover) {
-  transform: translateX(var(--stack-x, 0px)) translateY(-2px);
-  box-shadow: var(--shadow-md);
-}
 
 .cell:hover {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 25%, transparent);
@@ -560,10 +514,10 @@ const PRIORITIES = props.priorities
 
 /* Inner grid aligns with the header columns */
 .laneRow__grid {
-  --rowhead-w: 170px;
+  --rowhead-w: 190px;
   display: grid;
-  grid-template-columns: var(--rowhead-w) repeat(7, minmax(140px, 1fr));
-  gap: 8px;
+  grid-template-columns: var(--rowhead-w) repeat(7, minmax(220px, 1fr));
+  gap: 10px;
   align-items: start;
 }
 
