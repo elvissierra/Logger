@@ -232,61 +232,41 @@ function onStop(){ emit('stop', props.card) }
       </div>
     </section>
 
-    <!-- Compact (weekly) ultra-basic card when not editing -->
+    <!-- Compact (weekly/simple) strict folder card when not editing -->
     <template v-else-if="compact">
-      <section class="compact" @dblclick="editing = true">
-        <div class="compact__top">
-          <span class="handle grip" title="Drag" aria-label="Drag handle">≡</span>
-          <div class="compact__titlewrap">
-            <div class="compact__meta">
-              <div
-                class="compact__metaLine compact__metaLine--title"
-                :title="card.jobTitle || 'Untitled'"
-              >
-                {{ card.jobTitle || 'Untitled' }}
+      <section class="folderCard" @dblclick="editing = true">
+        <!-- Folder tab (visual only) -->
+        <div class="folderCard__tab" aria-hidden="true">
+          <span class="handle grip folderCard__grip" title="Drag" aria-label="Drag handle">≡</span>
+        </div>
+
+        <!-- Folder body -->
+        <div class="folderCard__body">
+          <div class="folderCard__main">
+            <div class="folderCard__title" :title="card.jobTitle || 'Untitled'">
+              {{ card.jobTitle || 'Untitled' }}
+            </div>
+            <div v-if="card.activity" class="folderCard__sub" :title="card.activity">
+              {{ card.activity }}
+            </div>
+
+            <div class="folderCard__times">
+              <div class="folderCard__time">
+                {{ card.start_utc ? new Date(card.start_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--' }}
               </div>
-              <div
-                class="compact__metaLine"
-                :title="card.activity || ''"
-              >
-                {{ card.activity || '—' }}
+              <div class="folderCard__time">
+                <span v-if="!isRunning && card.end_utc">
+                  {{ new Date(card.end_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+                </span>
+                <span v-else>Now</span>
               </div>
             </div>
           </div>
-          <div class="compact__hours">{{ fmtH(roundedDurationHours, 2) }} h</div>
-        </div>
 
-        <div class="compact__times">
-          <div class="compact__timeRow">
-            <span class="val">
-              {{ card.start_utc ? new Date(card.start_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--' }}
-            </span>
-          </div>
-          <div class="compact__timeRow">
-            <span class="val">
-              <span v-if="!isRunning && card.end_utc">
-                {{ new Date(card.end_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
-              </span>
-              <span v-else>Now</span>
-            </span>
-          </div>
-        </div>
-
-        <div class="compact__notes" v-if="(card.description && String(card.description).trim()) || (card.notes && String(card.notes).trim())">
-          <div class="lbl">Notes</div>
-          <div class="val">
-            {{ [card.description, card.notes].filter(v => v && String(v).trim()).join('\n') }}
-          </div>
-        </div>
-
-        <div class="compact__bottom">
-          <span class="compact__pri" :class="('p-' + String(card.priority || 'Normal').toLowerCase())">
-            {{ card.priority || 'Normal' }}
-          </span>
-
-          <div class="compact__actions">
+          <!-- Right action rail (stacked) -->
+          <div class="folderCard__rail">
             <button
-              class="compactBtn"
+              class="folderCard__btn"
               :title="isRunning ? 'Stop' : 'Start'"
               :aria-label="isRunning ? 'Stop' : 'Start'"
               @click.stop="isRunning ? onStop() : onStart()"
@@ -294,13 +274,23 @@ function onStop(){ emit('stop', props.card) }
               {{ isRunning ? '■' : '▶︎' }}
             </button>
             <button
-              class="compactBtn"
+              class="folderCard__btn"
               title="Edit"
               aria-label="Edit"
               @click.stop="editing = true"
             >
               ⋯
             </button>
+          </div>
+
+          <!-- Footer pills -->
+          <div class="folderCard__footer">
+            <span class="folderCard__pill folderCard__pill--pri" :class="('p-' + String(card.priority || 'Normal').toLowerCase())">
+              {{ card.priority || 'Normal' }}
+            </span>
+            <span class="folderCard__pill folderCard__pill--dur">
+              {{ fmtH(roundedDurationHours, 2) }} h
+            </span>
           </div>
         </div>
       </section>
@@ -351,103 +341,122 @@ function onStop(){ emit('stop', props.card) }
   
   .tcard__body { color: var(--text, #374151); min-height: 52px; overflow: hidden; }
 
-/* ===== Compact (Weekly) Ultra-Basic Card ===== */
+/* ===== Compact (Weekly/Simple) Strict Folder Card ===== */
 .tcard.compact {
   display: block;
   padding: 0;
-  border-radius: 12px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
   min-height: 0;
   height: auto;
+  overflow: visible;
+}
+
+/* Folder surface variables (easy to tune later) */
+.folderCard {
+  --folder-surface: var(--panel);
+  --folder-border: color-mix(in srgb, var(--border) 88%, transparent);
+  --folder-radius: 16px;
+
+  position: relative;
+  padding-top: 14px; /* space for tab */
+}
+
+/* Tab sits above body and shares the same surface */
+.folderCard__tab {
+  position: absolute;
+  top: 0;
+  left: 10px;        /* corner tab */
+  height: 18px;
+  min-width: 54px;   /* tighter tab footprint */
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-start;
+
+  background: var(--folder-surface);
+  border: 1px solid var(--folder-border);
+  border-bottom: 0;
+  border-top-left-radius: 14px;
+  border-top-right-radius: 14px;
+}
+
+.folderCard__grip {
+  font-size: 0.95rem;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.folderCard__body {
+  background: var(--folder-surface);
+  border: 1px solid var(--folder-border);
+  border-radius: var(--folder-radius);
+  padding: 14px 12px 10px 12px;
+
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 10px 10px;
+
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
-  background: var(--panel);
-  border: 1px solid var(--border);
 }
 
-.compact {
-  padding: 10px;
-  display: grid;
-  gap: 8px;
-}
-
-.compact__top {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: start;
-  gap: 8px;
-}
-
-.compact__titlewrap {
+.folderCard__main {
   min-width: 0;
 }
 
-.compact__meta {
-  display: grid;
-  gap: 2px;
-  font-size: 0.86rem;
+.folderCard__title {
+  font-weight: 850;
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
   color: var(--text);
-  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-  .compact__metaLine {
-    font-weight: 650;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-.compact__metaLine--title {
-  font-weight: 800;
-  font-size: 0.92rem;
-}
-
-.compact__hours {
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
+.folderCard__sub {
+  margin-top: 2px;
+  font-weight: 650;
+  font-size: 0.86rem;
   color: var(--muted);
   white-space: nowrap;
-  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-
-
-.compact__bottom {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+.folderCard__times {
+  margin-top: 8px;
+  display: grid;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
 }
 
-.compact__pri {
-  font-size: 0.78rem;
-  font-weight: 750;
-  padding: 0.18rem 0.6rem;
-  border-radius: 999px;
-  border: 1px solid rgba(0,0,0,.12);
-  background: rgba(255,255,255,.55);
-  color: rgba(0,0,0,.72);
+.folderCard__time {
+  font-weight: 850;
+  font-size: 1.05rem;
+  color: var(--text);
   white-space: nowrap;
 }
 
-/* Priority colors (kept minimal) */
-.compact__pri.p-low { background: #eef6ff; border-color: #bfdbfe; color: #1e3a8a; }
-.compact__pri.p-normal { background: #ecfdf5; border-color: #bbf7d0; color: #065f46; }
-.compact__pri.p-high { background: #fff7ed; border-color: #fed7aa; color: #9a3412; }
-.compact__pri.p-critical { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
-
-.compact__actions {
-  display: inline-flex;
-  gap: 8px;
+/* Right rail: stacked tools */
+.folderCard__rail {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  justify-items: end;
 }
 
-/* Compact action buttons (smaller than deck buttons for narrow cells) */
-.compactBtn {
-  width: 32px;
-  height: 32px;
+.folderCard__btn {
+  width: 36px;
+  height: 36px;
   padding: 0;
-  margin: 0;
-  border-radius: 10px;
+  border-radius: 12px;
   border: 1px solid rgba(0,0,0,.12);
-  background: rgba(255,255,255,.55);
+  background: rgba(255,255,255,.60);
   cursor: pointer;
   font-weight: 900;
   line-height: 1;
@@ -456,6 +465,39 @@ function onStop(){ emit('stop', props.card) }
   box-sizing: border-box;
   appearance: none;
   -webkit-appearance: none;
+}
+
+.folderCard__btn:hover {
+  background: rgba(255,255,255,.80);
+}
+
+.folderCard__footer {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.folderCard__pill {
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 0.22rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(0,0,0,.12);
+  background: rgba(255,255,255,.55);
+  color: rgba(0,0,0,.72);
+  white-space: nowrap;
+}
+
+/* Priority colors */
+.folderCard__pill.p-low { background: #eef6ff; border-color: #bfdbfe; color: #1e3a8a; }
+.folderCard__pill.p-normal { background: #ecfdf5; border-color: #bbf7d0; color: #065f46; }
+.folderCard__pill.p-high { background: #fff7ed; border-color: #fed7aa; color: #9a3412; }
+.folderCard__pill.p-critical { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+
+.folderCard__pill--dur {
+  font-variant-numeric: tabular-nums;
 }
   .tcard__body p { margin: .25rem 0; word-break: break-word; overflow-wrap: anywhere; }
   
@@ -576,43 +618,5 @@ function onStop(){ emit('stop', props.card) }
   }
   
 
-/* Compact times: two rows, unlabeled */
-.compact__times {
-  display: grid;
-  gap: 4px;
-  font-variant-numeric: tabular-nums;
-}
-
-.compact__timeRow {
-  display: block;
-}
-
-.compact__times .val {
-  color: var(--text);
-  font-weight: 800;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Optional notes in compact mode */
-.compact__notes {
-  display: grid;
-  gap: 4px;
-  margin-top: 2px;
-}
-
-.compact__notes .lbl {
-  color: var(--muted);
-  font-weight: 650;
-  font-size: 0.82rem;
-}
-
-.compact__notes .val {
-  white-space: pre-wrap;
-  color: var(--text);
-  font-size: 0.86rem;
-  line-height: 1.25;
-}
 
 </style>
