@@ -3,6 +3,10 @@
 import { ref, nextTick } from 'vue'
 import TimeCard from './TimeCard.vue'
 
+// Constant headroom policy: show up to N previous entries peeking above the front card.
+// This keeps cell layouts uniform regardless of how many entries exist.
+const MAX_DECK_BEHIND = 3
+
 // Hovered deck entry state (scoped to the hovered deck only)
 const hoveredEntryId = ref(null)       // String(id)
 const hoveredEntryIdx = ref(null)      // 1..n (within the behind stack)
@@ -275,7 +279,7 @@ const PRIORITIES = props.priorities
                   <!-- Previous entries: above + behind; title-only until hover -->
                   <div class="deckBehind" v-if="col.cards.length > 1">
                     <div
-                      v-for="(element, i) in col.cards.slice(1)"
+                      v-for="(element, i) in col.cards.slice(1, 1 + MAX_DECK_BEHIND)"
                       :key="element.id"
                       :class="[
                         'deckItem',
@@ -333,32 +337,40 @@ const PRIORITIES = props.priorities
 
 /* Spreadsheet-style weekly grid */
 .grid {
-  --rowhead-w: 190px;
+  --rowhead-w: 182px;
+  --grid-gap: 8px;
+  --cell-min-h: 228px;
+
   display: grid;
-  grid-template-columns: var(--rowhead-w) repeat(7, minmax(220px, 1fr));
-  gap: 10px;
+  grid-template-columns: var(--rowhead-w) repeat(7, minmax(210px, 1fr));
+  gap: var(--grid-gap);
   align-items: start;
-  padding: 6px 0;
+  padding: 4px 0;
 }
 
 .cell {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  min-height: 320px;
+
+  /* tighter + predictable whitespace */
+  min-height: var(--cell-min-h);
   position: relative;
-  padding: 26px 6px 10px;
+
+  /* reserve a safe header band so stacked cards never cover the hours/+ controls */
+  padding: 38px 8px 8px;
+
   overflow: visible;
   isolation: isolate;
 }
 
 /* Container for compact entries inside a cell (static deck, no drag) */
 .cell .droplist {
-  margin-top: 8px;
+  margin-top: 6px;
   position: relative;
   display: block;
   min-height: 0;
-  padding: 0 12px 14px;
+  padding: 0 8px 8px;
 }
 
 /* Deck wrapper (front card is in-flow; behind cards are absolutely stacked) */
@@ -366,11 +378,17 @@ const PRIORITIES = props.priorities
   position: relative;
 
   /* deck variables must live on a real element (scoped :root won't apply) */
-  --deck-peek: 44px;
-  --deck-step: 28px;
+  --deck-peek: 40px;
+  --deck-step: 22px;
+
+  /* Constant headroom policy (must match MAX_DECK_BEHIND in script) */
+  --deck-peek-count: 3;
+
+  /* Derived headroom so previous entries can peek ABOVE the front card without escaping the cell */
+  --deck-headroom: calc((var(--deck-peek-count) * var(--deck-step)) + 8px);
 
   /* reserve space so older tabs can peek above the front card */
-  padding-top: 34px;
+  padding-top: var(--deck-headroom);
 }
 
 .deckFront {
@@ -384,7 +402,7 @@ const PRIORITIES = props.priorities
   position: absolute;
   left: 0;
   right: 0;
-  top: 34px; /* baseline aligns with the front card top */
+  top: var(--deck-headroom); /* baseline aligns with the front card top */
   z-index: 100; /* below deckFront (120) by default */
   pointer-events: auto;
 }
@@ -400,6 +418,7 @@ const PRIORITIES = props.priorities
   position: absolute;
   left: 0;
   right: 0;
+  max-width: 100%;
 
   /* i=1 should already be above the front card */
   top: calc(var(--deck-i) * var(--deck-step) * -1);
@@ -468,7 +487,7 @@ const PRIORITIES = props.priorities
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 6px;
+  padding: 5px 6px;
   border-bottom: 1px solid var(--border);
   color: var(--muted);
   font-weight: 600;
@@ -500,12 +519,19 @@ const PRIORITIES = props.priorities
   padding: 0;
   background: transparent;
   border: none;
+
+  /* ALWAYS above the deck */
+  z-index: 500;
+  pointer-events: none; /* click-through so only + is interactive */
 }
 
 .cell__actions {
+  z-index: 500;
+  pointer-events: auto;
   position: absolute;
   top: 6px;
   right: 6px;
+  background: transparent;
 }
 
 /* Row-header project card */
@@ -696,26 +722,52 @@ const PRIORITIES = props.priorities
 .laneRow {
   grid-column: 1 / -1;
   position: relative;
-  padding: 12px 10px 12px;
+
+  /* tighter, consistent lane container */
+  padding: 8px;
   border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  background: color-mix(in srgb, var(--panel) 92%, transparent);
-  box-shadow: var(--shadow-sm);
+
+  background: transparent;
+  border: none;
+  box-shadow: none;
+
   overflow: visible;
-  transform: translateX(var(--lane-x, 0px));
+  transform: none; /* remove horizontal cascade shift to prevent collisions */
 }
 
-/* Deck overlap: lanes slightly tuck into each other */
-.laneRow + .laneRow {
-  margin-top: -14px;
+/* Visual folder chrome for the whole lane row */
+.laneRow::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;      /* IMPORTANT: no upward overlap; prevents lane collisions */
+  bottom: 0;
+
+  border-radius: 18px;
+
+  /* stronger, more “concrete” lane border */
+  border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  box-shadow: var(--shadow-sm);
+
+  z-index: 0;
 }
+
+/* lane content should always sit above the chrome */
+.laneRow > * {
+  position: relative;
+  z-index: 1;
+}
+
+
 
 /* Inner grid aligns with the header columns */
 .laneRow__grid {
-  --rowhead-w: 190px;
+  --rowhead-w: 182px;
   display: grid;
-  grid-template-columns: var(--rowhead-w) repeat(7, minmax(220px, 1fr));
-  gap: 10px;
+  grid-template-columns: var(--rowhead-w) repeat(7, minmax(210px, 1fr));
+  gap: 8px;
   align-items: start;
 }
 
@@ -724,6 +776,7 @@ const PRIORITIES = props.priorities
   background: transparent;
   border: none;
   padding: 0;
+  min-height: var(--cell-min-h);
 }
 
 /* Slightly soften day cell borders so the lane reads unified */
@@ -732,21 +785,23 @@ const PRIORITIES = props.priorities
   border-color: color-mix(in srgb, var(--border) 78%, transparent);
 }
 
-/* Deck cascade offsets + z-order (first lane stays on top) */
-.grid > section.laneRow:nth-of-type(1) { z-index: 20; --lane-x: 0px; }
-.grid > section.laneRow:nth-of-type(2) { z-index: 19; --lane-x: 8px; }
-.grid > section.laneRow:nth-of-type(3) { z-index: 18; --lane-x: 16px; }
-.grid > section.laneRow:nth-of-type(4) { z-index: 17; --lane-x: 24px; }
-.grid > section.laneRow:nth-of-type(5) { z-index: 16; --lane-x: 32px; }
-.grid > section.laneRow:nth-of-type(6) { z-index: 15; --lane-x: 40px; }
-.grid > section.laneRow:nth-of-type(7) { z-index: 14; --lane-x: 48px; }
-.grid > section.laneRow:nth-of-type(8) { z-index: 13; --lane-x: 56px; }
-.grid > section.laneRow:nth-of-type(9) { z-index: 12; --lane-x: 64px; }
-.grid > section.laneRow:nth-of-type(10) { z-index: 11; --lane-x: 72px; }
 
-.laneRow.prio-low { background: color-mix(in srgb, #93c5fd 14%, var(--panel)); border-color: color-mix(in srgb, #93c5fd 22%, var(--border)); }
-.laneRow.prio-normal { background: color-mix(in srgb, #86efac 12%, var(--panel)); border-color: color-mix(in srgb, #86efac 18%, var(--border)); }
-.laneRow.prio-high { background: color-mix(in srgb, #fdba74 12%, var(--panel)); border-color: color-mix(in srgb, #fdba74 18%, var(--border)); }
-.laneRow.prio-critical { background: color-mix(in srgb, #fca5a5 12%, var(--panel)); border-color: color-mix(in srgb, #fca5a5 18%, var(--border)); }
+
+.laneRow.prio-low::before {
+  background: color-mix(in srgb, #93c5fd 14%, var(--panel));
+  border-color: color-mix(in srgb, #93c5fd 22%, var(--border));
+}
+.laneRow.prio-normal::before {
+  background: color-mix(in srgb, #86efac 12%, var(--panel));
+  border-color: color-mix(in srgb, #86efac 18%, var(--border));
+}
+.laneRow.prio-high::before {
+  background: color-mix(in srgb, #fdba74 12%, var(--panel));
+  border-color: color-mix(in srgb, #fdba74 18%, var(--border));
+}
+.laneRow.prio-critical::before {
+  background: color-mix(in srgb, #fca5a5 12%, var(--panel));
+  border-color: color-mix(in srgb, #fca5a5 18%, var(--border));
+}
 
 </style>
