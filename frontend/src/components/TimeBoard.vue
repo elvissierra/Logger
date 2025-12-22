@@ -25,7 +25,6 @@
  * - Be careful when changing storage keys (they include group/week so per-cell order persists correctly).
  */
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import draggable from 'vuedraggable'
 import TimeCard from './TimeCard.vue'
 import TodayLog from './TodayLog.vue'
 import WeekLog from './WeekLog.vue'
@@ -85,6 +84,47 @@ function runningKey () {
 }
 const _rk = runningKey()
 const runningId = ref(_rk ? localStorage.getItem(_rk) : null)
+
+// --- Time rounding / overlap policy ---
+// User-configurable increment (minutes). Default: 15.
+const incrementMinutes = ref(Number(localStorage.getItem('logger.incrementMinutes') || 15))
+
+watch(incrementMinutes, (v) => {
+  const n = Number(v)
+  const safe = Number.isFinite(n) ? String(Math.min(60, Math.max(1, Math.round(n)))) : '15'
+  localStorage.setItem('logger.incrementMinutes', safe)
+}, { immediate: true })
+
+function _normInc() {
+  const n = Number(incrementMinutes.value)
+  if (!Number.isFinite(n)) return 15
+  return Math.min(60, Math.max(1, Math.round(n)))
+}
+
+function roundDateToIncrement(dt, mode = 'round') {
+  const mins = _normInc()
+  const step = mins * 60 * 1000
+  const t = dt instanceof Date ? dt.getTime() : new Date(dt).getTime()
+  const q = t / step
+  const k = mode === 'ceil' ? Math.ceil(q) : mode === 'floor' ? Math.floor(q) : Math.round(q)
+  return new Date(k * step)
+}
+
+function roundHMToIncrement(hm, mode = 'round') {
+  // hm: "HH:MM" in 24h
+  const mins = _normInc()
+  const parts = String(hm || '').split(':')
+  const h = Number(parts[0] || 0)
+  const m = Number(parts[1] || 0)
+  const total = (h * 60) + m
+  const q = total / mins
+  const k = mode === 'ceil' ? Math.ceil(q) : mode === 'floor' ? Math.floor(q) : Math.round(q)
+  const rounded = k * mins
+  const hh = pad(Math.floor(rounded / 60) % 24)
+  const mm = pad(rounded % 60)
+  return `${hh}:${mm}`
+}
+
 const TARGET_WEEKLY_HOURS = 40
 
 
@@ -93,56 +133,88 @@ const TARGET_WEEKLY_HOURS = 40
 // don’t clash. We clear the key on stop or when navigating to a week where the entry is not present.
 // --- Running timer pointer (client-side) ---
 function setRunningId (id) {
-  runningId.value = id
+  const v = (id === null || id === undefined || id === '') ? null : String(id)
+  runningId.value = v
   const rk = runningKey()
   if (!rk) return
-  if (id) localStorage.setItem(rk, id)
+  if (v) localStorage.setItem(rk, v)
   else localStorage.removeItem(rk)
 }
 async function stopRunningIfAny () {
-  if (!runningId.value) return { stopped: false, id: null, error: null }
+  if (!runningId.value) return { stopped: false, id: null, error: null, stoppedAtIso: null }
 
   const id = runningId.value
   try {
+    const roundedStop = roundDateToIncrement(new Date(), 'ceil')
     const res = await apiFetch(`${API_BASE}/api/time-entries/${id}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
         'X-CSRF-Token': getCsrf()
       },
-      body: JSON.stringify({ end_utc: new Date().toISOString() })
+      body: JSON.stringify({ end_utc: roundedStop.toISOString() })
     })
 
     if (!res.ok) {
       const msg = await extractErrorMessage(res)
+      const status = res.status
+      const lower = String(msg || '').toLowerCase()
+
+      // If the backend indicates the entry is already stopped or no longer exists,
+      // clear the local pointer and allow the user to start a new entry.
+      if (
+        status === 404 ||
+        lower.includes('not found') ||
+        lower.includes('already') ||
+        lower.includes('stopped') ||
+        lower.includes('ended') ||
+        lower.includes('end_utc')
+      ) {
+        // Stale local pointer (e.g., entry already ended elsewhere). Clear it and proceed.
+        setRunningId(null)
+        await load()
+      
+        // Small debug breadcrumb without spamming.
+        const now = Date.now()
+        if (now - _stalePointerToastAt > 15000) {
+          _stalePointerToastAt = now
+          notify('Cleared stale running entry pointer (server already ended it).', 'info', 3200)
+        }
+      
+        return { stopped: false, id, error: null, stoppedAtIso: null }
+      }
+
       notify(`Could not stop existing timer: ${msg}`, 'error', 6000)
-      return { stopped: false, id, error: msg }
+      return { stopped: false, id, error: msg, stoppedAtIso: null }
     }
 
+    const stoppedAtIso = roundedStop.toISOString()
     setRunningId(null)
     await load()
-    return { stopped: true, id, error: null }
+    return { stopped: true, id, error: null, stoppedAtIso }
   } catch (e) {
     const msg = e?.message || String(e)
     notify(`Could not stop existing timer: ${msg}`, 'error', 6000)
-    return { stopped: false, id, error: msg }
+    return { stopped: false, id, error: msg, stoppedAtIso: null }
   }
 }
 // Start a timer: stop any existing one, create a new *running* entry (end_utc=null).
 async function startTimer (seedCard) {
-  const { error } = await stopRunningIfAny()
+  const { error, stoppedAtIso } = await stopRunningIfAny()
   if (error) {
     // Backend still thinks a timer is running; don’t try to start another.
     return
   }
 
-  const now = new Date()
+  // If we stopped a previous timer, start the new one at the same rounded boundary.
+  // Otherwise start at a rounded "now" boundary.
+  const startIso = stoppedAtIso || roundDateToIncrement(new Date(), 'ceil').toISOString()
+
   const payload = {
-    
     project_code: seedCard.project_code || seedCard.projectCode || '',
     activity: seedCard.activity || '',
     job_title: seedCard.job_title || seedCard.jobTitle || null,
-    start_utc: now.toISOString(),
+    start_utc: startIso,
     end_utc: null,
     notes: `[prio:${(seedCard.priority || 'Normal').toLowerCase()}]` + (seedCard.notes ? ` ${seedCard.notes}` : '')
   }
@@ -170,7 +242,7 @@ function isLaneRunning(lane) {
   try {
     if (!runningId.value) return false
     for (const col of lane.columns) {
-      if (col.cards && col.cards.some(x => x.id === runningId.value)) return true
+      if (col.cards && col.cards.some(x => String(x.id) === String(runningId.value))) return true
     }
     return false
   } catch { return false }
@@ -181,7 +253,7 @@ const runningLaneTitle = computed(() => {
   try {
     for (const lane of swimlanes.value) {
       for (const col of lane.columns) {
-        if (col.cards && col.cards.some(c => c.id === runningId.value)) {
+        if (col.cards && col.cards.some(c => String(c.id) === String(runningId.value))) {
           return lane.title
         }
       }
@@ -321,6 +393,7 @@ const loading = ref(false)
 const error = ref('')
 
 const toasts = ref([])
+let _stalePointerToastAt = 0
 
 function notify (msg, type = 'info', ttl = 3000) {
   const id = Math.random().toString(36).slice(2)
@@ -386,7 +459,7 @@ function quickAddToday(){
 function mapEntryToCard(e) {
   const parsed = parsePriorityAndCleanNotes(e.notes || '')
   return {
-    id: e.id,
+    id: String(e.id),
     jobTitle: e.job_title || '',
     projectCode: e.project_code,
     activity: e.activity,
@@ -454,7 +527,7 @@ async function load() {
     // If running id is no longer in the fetched set (e.g., week navigation), clear pointer
     try {
       if (runningId.value) {
-        const found = swimlanes.value.some(l => l.columns.some(c => c.cards.some(x => x.id === runningId.value)))
+        const found = swimlanes.value.some(l => l.columns.some(c => c.cards.some(x => String(x.id) === String(runningId.value))))
         if (!found) setRunningId(null)
       }
     } catch {}
@@ -600,8 +673,8 @@ async function deleteCard(lane, col, card) {
 function addCard(lane, col) {
   const now = new Date()
   const hm = `${pad(now.getHours())}:${pad(now.getMinutes())}`
-  const startLocal = roundDateToQuarter(new Date(`${col.dayKey}T${hm}`))
-  const endLocal   = new Date(startLocal.getTime() + 15 * 60000)
+  const startLocal = roundDateToIncrement(new Date(`${col.dayKey}T${hm}`), 'round')
+  const endLocal   = new Date(startLocal.getTime() + _normInc() * 60000)
 
   const card = {
     id: (crypto?.randomUUID?.() || `tmp_${Date.now()}_${Math.random().toString(16).slice(2)}`),
@@ -623,8 +696,8 @@ function addCard(lane, col) {
 function onCellChange(lane, col, evt) {
   if (evt?.added) {
     const card = evt.added.element
-    const startHM = roundHMToQuarter(timeHMFromISO(card.start_utc || new Date().toISOString()))
-    const endHM   = roundHMToQuarter(timeHMFromISO(card.end_utc || startHM))
+    const startHM = roundHMToIncrement(timeHMFromISO(card.start_utc || new Date().toISOString()), 'round')
+    const endHM   = roundHMToIncrement(timeHMFromISO(card.end_utc || card.start_utc || new Date().toISOString()), 'round')
     card.start_utc = composeISOFromLaneAndTime(col.dayKey, startHM)
     card.end_utc   = composeISOFromLaneAndTime(col.dayKey, endHM)
 
@@ -698,6 +771,16 @@ watch([currentWeekStart, groupBy], () => { load() })
             <option value="simple">Simple</option>
           </select>
         </label>
+        <label class="group">
+          Increment
+          <select v-model.number="incrementMinutes">
+            <option :value="5">5 min</option>
+            <option :value="10">10 min</option>
+            <option :value="15">15 min</option>
+            <option :value="20">20 min</option>
+            <option :value="30">30 min</option>
+          </select>
+        </label>
         <div class="goal">
           <div class="bar"><i :style="{ width: (weeklyPct*100)+'%' }"></i></div>
           <span>{{ fmtH(weeklyHours, 2) }} / {{ TARGET_WEEKLY_HOURS }} h</span>
@@ -767,6 +850,7 @@ watch([currentWeekStart, groupBy], () => { load() })
         :swimlanes="swimlanes"
         :running-id="runningId"
         :now-tick="nowTick"
+        :increment-minutes="incrementMinutes"
         :fmt-h="fmtH"
         :col-hours="colHours"
         :lane-hours="laneHours"
@@ -820,35 +904,27 @@ watch([currentWeekStart, groupBy], () => { load() })
           </header>
 
           <div class="simple__entries">
-            <draggable
+            <div
               v-if="colFor(lane, selectedDayKey).cards.length"
-              v-model="colFor(lane, selectedDayKey).cards"
-              item-key="id"
-              :animation="160"
-              handle=".handle"
               class="simple__droplist"
-              :group="{ name: 'cards', pull: true, put: true }"
-              ghost-class="drag-ghost"
-              chosen-class="drag-chosen"
-              drag-class="drag-dragging"
-              @change="onCellChange(lane, colFor(lane, selectedDayKey), $event)"
-              @end="onReorderCell(lane, selectedDayKey)"
             >
-              <template #item="{ element, index }">
-                <TimeCard
-                  :card="element"
-                  :compact="true"
-                  :tab-side="(index % 2 === 0) ? 'left' : 'right'"
-                  :open-on-mount="element.__new === true"
-                  :running-id="runningId"
-                  :now-tick="nowTick"
-                  @start="startTimer"
-                  @stop="stopTimer"
-                  @save="saveCard"
-                  @delete="c => deleteCard(lane, colFor(lane, selectedDayKey), c)"
-                />
-              </template>
-            </draggable>
+              <TimeCard
+                v-for="(element, index) in colFor(lane, selectedDayKey).cards"
+                :key="element.id"
+                :card="element"
+                :compact="true"
+                :tab-side="(index % 2 === 0) ? 'left' : 'right'"
+                :collapsed="false"
+                :increment-minutes="incrementMinutes"
+                :open-on-mount="element.__new === true"
+                :running-id="runningId"
+                :now-tick="nowTick"
+                @start="startTimer"
+                @stop="stopTimer"
+                @save="saveCard"
+                @delete="c => deleteCard(lane, colFor(lane, selectedDayKey), c)"
+              />
+            </div>
 
           </div>
         </div>

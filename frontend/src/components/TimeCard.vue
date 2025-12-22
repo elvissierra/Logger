@@ -38,10 +38,20 @@ const props = defineProps({
   runningId: { type: String, default: null },
   nowTick: { type: Number, default: 0 },
   compact: { type: Boolean, default: false },
-  tabSide: { type: String, default: 'left' } // 'left' | 'right'
+  tabSide: { type: String, default: 'left' }, // 'left' | 'right'
+  collapsed: { type: Boolean, default: false },
+  incrementMinutes: { type: Number, default: 15 },
+  stackIndex: { type: Number, default: 0 }
 })
 const emit = defineEmits(['save', 'delete', 'start', 'stop'])
-const isRunning = computed(() => props.runningId && props.card.id === props.runningId)
+const isRunning = computed(() => props.runningId && String(props.card.id) === String(props.runningId))
+
+const incMins = computed(() => {
+  const n = Number(props.incrementMinutes)
+  if (!Number.isFinite(n)) return 15
+  return Math.min(60, Math.max(1, Math.round(n)))
+})
+const stepSeconds = computed(() => incMins.value * 60)
 
 const showFullDesc = ref(false)
 const isClampedCandidate = computed(() => (props.card.description || '').length > 120)
@@ -98,11 +108,11 @@ function toLocalInput(iso) {
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
   return d.toISOString().slice(0, 16) // YYYY-MM-DDTHH:mm
 }
-// Convert local datetime string -> ISO (UTC), rounding to nearest 15 minutes to match the app’s granularity.
+// Convert local datetime string -> ISO (UTC), rounding to nearest increment to match the app’s granularity.
 function fromLocalInput(localStr) {
   if (!localStr) return ''
   const d = new Date(localStr) // interpreted as local time
-  const ms = 15 * 60 * 1000
+  const ms = incMins.value * 60 * 1000
   const roundedLocal = new Date(Math.round(d.getTime() / ms) * ms)
   // Browser already converted local time to the right UTC instant; just emit ISO
   return roundedLocal.toISOString()
@@ -135,6 +145,15 @@ function onSave() {
   const endIso = local.value.end_local
     ? fromLocalInput(local.value.end_local)
     : (local.value.end_utc ? fromLocalInput(toLocalInput(local.value.end_utc)) : null)
+  let endIsoSafe = endIso
+  if (endIsoSafe) {
+    const s = new Date(startIso).getTime()
+    const e = new Date(endIsoSafe).getTime()
+    if (Number.isFinite(s) && Number.isFinite(e) && e < s) {
+      // Clamp to at least one increment after start.
+      endIsoSafe = new Date(s + (incMins.value * 60 * 1000)).toISOString()
+    }
+  }
 
   const payload = {
     ...local.value,
@@ -145,7 +164,7 @@ function onSave() {
     priority: local.value.priority || 'Normal',
     notes: [local.value.description, local.value.notes].filter(Boolean).join('\n'),
     start_utc: startIso,
-    end_utc: endIso,
+    end_utc: endIsoSafe,
   }
   emit('save', payload)
   editing.value = false
@@ -165,7 +184,7 @@ function onStop(){ emit('stop', props.card) }
   >
     <!-- Full header (focus cards) -->
     <header v-if="!compact && !editing" class="tcard__head">
-      <span class="handle grip" title="Drag to reorder" aria-label="Drag handle">☰</span>
+      <span class="grip" aria-hidden="true">☰</span>
       <div class="tcard__title">
         <span
           class="prio-dot"
@@ -194,10 +213,10 @@ function onStop(){ emit('stop', props.card) }
         </label>
         <div class="row">
           <label>Start
-            <input type="datetime-local" step="900" v-model="local.start_local" />
+            <input type="datetime-local" :step="stepSeconds" v-model="local.start_local" />
           </label>
           <label>End
-            <input type="datetime-local" step="900" v-model="local.end_local" />
+            <input type="datetime-local" :step="stepSeconds" v-model="local.end_local" />
           </label>
         </div>
       </div>
@@ -235,23 +254,29 @@ function onStop(){ emit('stop', props.card) }
 
     <!-- Compact (weekly/simple) strict folder card when not editing -->
     <template v-else-if="compact">
-      <section class="folderCard" :class="'folderCard--tab-' + (tabSide === 'right' ? 'right' : 'left')" @dblclick="editing = true">
+      <section
+        class="folderCard"
+        :class="[
+          'folderCard--tab-' + (tabSide === 'right' ? 'right' : 'left'),
+          'folderCard--tone-' + (((Number(stackIndex) || 0) % 4) + 1),
+          { 'folderCard--collapsed': !!collapsed }
+        ]"
+        @dblclick="editing = true"
+      >
         <!-- Folder tab (visual only) -->
         <div class="folderCard__tab" aria-hidden="true">
-          <span class="handle grip folderCard__grip" title="Drag" aria-label="Drag handle">≡</span>
+          <span class="grip folderCard__grip" aria-hidden="true">≡</span>
         </div>
-
         <!-- Folder body -->
         <div class="folderCard__body">
           <div class="folderCard__main">
             <div class="folderCard__title" :title="card.jobTitle || 'Untitled'">
               {{ card.jobTitle || 'Untitled' }}
             </div>
-            <div v-if="card.activity" class="folderCard__sub" :title="card.activity">
+            <div v-if="!collapsed && card.activity" class="folderCard__sub" :title="card.activity">
               {{ card.activity }}
             </div>
-
-            <div class="folderCard__times">
+            <div v-if="!collapsed" class="folderCard__times">
               <div class="folderCard__time">
                 {{ card.start_utc ? new Date(card.start_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--' }}
               </div>
@@ -263,9 +288,8 @@ function onStop(){ emit('stop', props.card) }
               </div>
             </div>
           </div>
-
           <!-- Right action rail (stacked) -->
-          <div class="folderCard__rail">
+          <div v-if="!collapsed" class="folderCard__rail">
             <button
               class="folderCard__btn"
               :title="isRunning ? 'Stop' : 'Start'"
@@ -283,9 +307,8 @@ function onStop(){ emit('stop', props.card) }
               ⋯
             </button>
           </div>
-
           <!-- Footer pills -->
-          <div class="folderCard__footer">
+          <div v-if="!collapsed" class="folderCard__footer">
             <span class="folderCard__pill folderCard__pill--pri" :class="('p-' + String(card.priority || 'Normal').toLowerCase())">
               {{ card.priority || 'Normal' }}
             </span>
@@ -358,7 +381,7 @@ function onStop(){ emit('stop', props.card) }
 .folderCard {
   --folder-surface: var(--panel);
   --folder-border: color-mix(in srgb, var(--border) 88%, transparent);
-  --folder-radius: 16px;
+  --folder-radius: 14px;
 
   position: relative;
   padding-top: 14px; /* space for tab */
@@ -385,13 +408,14 @@ function onStop(){ emit('stop', props.card) }
 }
 
 .folderCard--tab-left .folderCard__tab {
-  left: 10px;
+  left: 0px;
   right: auto;
 }
 
 .folderCard--tab-right .folderCard__tab {
-  right: 10px;
+  right: 0px;
   left: auto;
+  justify-content: flex-end;
 }
 
 .folderCard__grip {
@@ -415,18 +439,50 @@ function onStop(){ emit('stop', props.card) }
   overflow: hidden;
 }
 
+/* When the tab is on a side, square that top corner so the tab can sit flush */
+.folderCard--tab-left .folderCard__body {
+  border-top-left-radius: 0;
+}
+
+.folderCard--tab-right .folderCard__body {
+  border-top-right-radius: 0;
+}
+
+/* Collapsed deck entries (Option A): title strip only */
+.folderCard--collapsed .folderCard__body {
+  padding: 10px 12px;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto;
+  gap: 0;
+}
+
+.folderCard--collapsed .folderCard__title {
+  font-size: 0.98rem;
+  font-weight: 850;
+}
+
+.folderCard--collapsed .folderCard__main {
+  min-width: 0;
+}
+
 .folderCard__main {
   min-width: 0;
 }
 
-.folderCard__title {
-  font-weight: 850;
-  font-size: 1.05rem;
-  letter-spacing: 0.01em;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  .folderCard__title {
+    font-weight: 850;
+    font-size: 1.05rem;
+    letter-spacing: 0.01em;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+/* Title alignment follows the tab side (so collapsed peeks are readable) */
+.folderCard--tab-right .folderCard__title,
+.folderCard--tab-right .folderCard__sub {
+  text-align: right;
 }
 
 .folderCard__sub {
@@ -513,8 +569,12 @@ function onStop(){ emit('stop', props.card) }
   .tcard__body p { margin: .25rem 0; word-break: break-word; overflow-wrap: anywhere; }
   
   .tcard__head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .6rem; }
-  .handle { cursor: grab; user-select: none; }
-  .handle.grip { font-size: 1rem; line-height: 1; opacity: .7; }
+  .grip { cursor: default; user-select: none; font-size: 1rem; line-height: 1; opacity: .7; }
+/* Folder tone palette (use stackIndex to rotate tones for stacked entries) */
+.folderCard--tone-1 { --folder-surface: #bfe3ff; --folder-border: color-mix(in srgb, #3b82f6 28%, rgba(0,0,0,.12)); }
+.folderCard--tone-2 { --folder-surface: #bff7ea; --folder-border: color-mix(in srgb, #14b8a6 26%, rgba(0,0,0,.12)); }
+.folderCard--tone-3 { --folder-surface: #ffd7b0; --folder-border: color-mix(in srgb, #f97316 26%, rgba(0,0,0,.12)); }
+.folderCard--tone-4 { --folder-surface: #ffb7b7; --folder-border: color-mix(in srgb, #ef4444 26%, rgba(0,0,0,.12)); }
   .tcard__title { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
   .title { font-weight: 700; letter-spacing: .2px; }
   .chip { font-size: .75rem; padding: .15rem .45rem; border-radius: 999px; background: color-mix(in srgb, var(--primary, #5b8cff) 18%, transparent); color: var(--text, #111827); border: 1px solid var(--border, #e5e7eb); }

@@ -1,7 +1,90 @@
 
 <script setup>
-import draggable from 'vuedraggable'
+import { ref, nextTick } from 'vue'
 import TimeCard from './TimeCard.vue'
+
+// Hovered deck entry state (scoped to the hovered deck only)
+const hoveredEntryId = ref(null)       // String(id)
+const hoveredEntryIdx = ref(null)      // 1..n (within the behind stack)
+const hoveredDeckId = ref(null)        // `${laneKey}|${dayKey}`
+const hoverDeltaPx = ref(0)            // how much to push the cards in front (px)
+
+let _hoverToken = 0
+
+let _leaveTimer = null
+
+function _clearLeaveTimer() {
+  if (_leaveTimer) {
+    clearTimeout(_leaveTimer)
+    _leaveTimer = null
+  }
+}
+
+function _parsePx(v) {
+  const n = parseFloat(String(v || '').trim())
+  return Number.isFinite(n) ? n : 0
+}
+
+async function onDeckEnter(e, entryId, entryIdx, deckId) {
+  _hoverToken += 1
+  const token = _hoverToken
+  _clearLeaveTimer()
+
+  hoveredEntryId.value = String(entryId)
+  hoveredEntryIdx.value = Number(entryIdx)
+  hoveredDeckId.value = String(deckId)
+
+  // Wait for Vue to re-render the hovered card with `collapsed=false`.
+  await nextTick()
+  if (token !== _hoverToken) return
+
+  const el = e?.currentTarget
+  if (!el) return
+
+  // Deck peek height is controlled by CSS var on .deck
+  const deckEl = el.closest('.deck')
+  const peekPx = deckEl
+    ? _parsePx(getComputedStyle(deckEl).getPropertyValue('--deck-peek'))
+    : _parsePx(getComputedStyle(el).height)
+
+  // Expanded height: use scrollHeight (works even if height is auto)
+  const expandedPx = Math.max(
+    _parsePx(el.scrollHeight),
+    _parsePx(el.getBoundingClientRect?.().height)
+  )
+
+  // Push only by the extra height needed beyond the peek.
+  hoverDeltaPx.value = Math.max(0, expandedPx - peekPx)
+}
+
+
+function onDeckLeave() {
+  // Debounce collapse so quick pointer transitions inside the deck don’t flicker.
+  _clearLeaveTimer()
+  const tokenAtLeave = ++_hoverToken
+
+  _leaveTimer = setTimeout(() => {
+    if (tokenAtLeave !== _hoverToken) return
+    hoveredEntryId.value = null
+    hoveredEntryIdx.value = null
+    hoveredDeckId.value = null
+    hoverDeltaPx.value = 0
+  }, 90)
+}
+
+function onFrontEnter(deckId) {
+  _clearLeaveTimer()
+  // Bump token so any pending measurements from a prior hover can't apply.
+  _hoverToken += 1
+
+  const id = String(deckId || '')
+  if (hoveredDeckId.value && hoveredDeckId.value === id) {
+    hoveredEntryId.value = null
+    hoveredEntryIdx.value = null
+    hoveredDeckId.value = null
+    hoverDeltaPx.value = 0
+  }
+}
 
 const props = defineProps({
   // container state
@@ -12,6 +95,7 @@ const props = defineProps({
   // timer + ticking
   runningId: { required: true },
   nowTick: { required: true },
+  incrementMinutes: { type: Number, required: true },
 
   // formatters / aggregations
   fmtH: { type: Function, required: true },
@@ -154,35 +238,78 @@ const PRIORITIES = props.priorities
                 <button class="mini icon" @click="addCard(lane, col)" title="Add card to this cell">＋</button>
               </div>
 
-              <draggable
-                v-if="col.cards.length"
-                v-model="col.cards"
-                item-key="id"
-                :animation="160"
-                handle=".handle"
-                class="droplist"
-                :group="{ name: 'cards', pull: true, put: true }"
-                ghost-class="drag-ghost"
-                chosen-class="drag-chosen"
-                drag-class="drag-dragging"
-                @change="onCellChange(lane, col, $event)"
-                @end="onReorderCell(lane, col.dayKey)"
-              >
-                <template #item="{ element, index }">
-                  <TimeCard
-                    :card="element"
-                    :open-on-mount="element.__new === true"
-                    :running-id="runningId"
-                    :now-tick="nowTick"
-                    :compact="true"
-                    :tab-side="(index % 2 === 0) ? 'left' : 'right'"
-                    @start="startTimer"
-                    @stop="stopTimer"
-                    @save="saveCard"
-                    @delete="c => deleteCard(lane, col, c)"
-                  />
-                </template>
-              </draggable>
+              <div v-if="col.cards.length" class="droplist">
+                <div
+                  class="deck"
+                  :data-deck-id="lane.key + '|' + col.dayKey"
+                  :class="{ 'deck--hovering': hoveredDeckId === (lane.key + '|' + col.dayKey) }"
+                  :style="{
+                    '--deck-front-push': (hoveredDeckId === (lane.key + '|' + col.dayKey) && hoveredEntryIdx)
+                      ? (hoverDeltaPx + 'px')
+                      : '0px'
+                  }"
+                  @mouseleave="onDeckLeave"
+                >
+                  <!-- Front / current entry (newest) -->
+                  <div
+                    v-if="col.cards[0]"
+                    class="deckFront"
+                    @mouseenter="onFrontEnter(lane.key + '|' + col.dayKey)"
+                  >
+                    <TimeCard
+                      :card="col.cards[0]"
+                      :open-on-mount="col.cards[0].__new === true"
+                      :running-id="runningId"
+                      :now-tick="nowTick"
+                      :compact="true"
+                      :stack-index="0"
+                      :tab-side="'left'"
+                      :collapsed="false"
+                      :increment-minutes="incrementMinutes"
+                      @start="startTimer"
+                      @stop="stopTimer"
+                      @save="saveCard"
+                      @delete="c => deleteCard(lane, col, c)"
+                    />
+                  </div>
+                  <!-- Previous entries: above + behind; title-only until hover -->
+                  <div class="deckBehind" v-if="col.cards.length > 1">
+                    <div
+                      v-for="(element, i) in col.cards.slice(1)"
+                      :key="element.id"
+                      :class="[
+                        'deckItem',
+                        (hoveredDeckId === (lane.key + '|' + col.dayKey) && hoveredEntryId === String(element.id))
+                          ? 'deckItem--active'
+                          : ''
+                      ]"
+                      :style="{
+                        '--deck-i': (i + 1),
+                        '--deck-push': (hoveredDeckId === (lane.key + '|' + col.dayKey) && hoveredEntryIdx && ((i + 1) < hoveredEntryIdx))
+                          ? (hoverDeltaPx + 'px')
+                          : '0px'
+                      }"
+                      @mouseenter="onDeckEnter($event, element.id, (i + 1), (lane.key + '|' + col.dayKey))"
+                    >
+                      <TimeCard
+                        :card="element"
+                        :open-on-mount="element.__new === true"
+                        :running-id="runningId"
+                        :now-tick="nowTick"
+                        :compact="true"
+                        :stack-index="i + 1"
+                        :tab-side="((i + 1) % 2 === 0) ? 'left' : 'right'"
+                        :collapsed="!(hoveredDeckId === (lane.key + '|' + col.dayKey) && hoveredEntryId === String(element.id))"
+                        :increment-minutes="incrementMinutes"
+                        @start="startTimer"
+                        @stop="stopTimer"
+                        @save="saveCard"
+                        @delete="c => deleteCard(lane, col, c)"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </template>
         </div>
@@ -225,14 +352,85 @@ const PRIORITIES = props.priorities
   isolation: isolate;
 }
 
-/* Container for compact entries inside a cell (simple list for now) */
+/* Container for compact entries inside a cell (static deck, no drag) */
 .cell .droplist {
   margin-top: 8px;
-  display: grid;
-  gap: 8px;
+  position: relative;
+  display: block;
   min-height: 0;
-  padding: 0 6px 8px;
+  padding: 0 12px 14px;
 }
+
+/* Deck wrapper (front card is in-flow; behind cards are absolutely stacked) */
+.deck {
+  position: relative;
+
+  /* deck variables must live on a real element (scoped :root won't apply) */
+  --deck-peek: 44px;
+  --deck-step: 28px;
+
+  /* reserve space so older tabs can peek above the front card */
+  padding-top: 34px;
+}
+
+.deckFront {
+  position: relative;
+  z-index: 120;
+  transform: translateY(var(--deck-front-push, 0px));
+  transition: transform 140ms ease;
+}
+
+.deckBehind {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 34px; /* baseline aligns with the front card top */
+  z-index: 100; /* below deckFront (120) by default */
+  pointer-events: auto;
+}
+
+/* When hovering a behind-card in THIS deck, allow behind stack to render above front */
+.deck.deck--hovering .deckBehind {
+  z-index: 160;
+}
+
+
+/* Collapsed cards stacked ABOVE and BEHIND the front card */
+.deckItem {
+  position: absolute;
+  left: 0;
+  right: 0;
+
+  /* i=1 should already be above the front card */
+  top: calc(var(--deck-i) * var(--deck-step) * -1);
+
+  z-index: calc(110 - var(--deck-i));
+
+  height: var(--deck-peek);
+  overflow: hidden;
+  border-radius: 18px;
+  transform: translateY(var(--deck-push, 0px));
+  transition: transform 140ms ease, height 140ms ease;
+}
+
+/* Expand the active (currently hovered/selected) card.
+   IMPORTANT: this is state-driven (deckItem--active) so the card stays expanded
+   while the pointer moves within the deck (prevents the “empty gap” effect). */
+.deckItem.deckItem--active {
+  overflow: visible;
+  z-index: 220;
+  height: auto; /* allow the full folder card to render */
+}
+
+/* Optional: keep a hover affordance as well (same behavior) */
+.deckItem:hover {
+  overflow: visible;
+  z-index: 220;
+  height: auto;
+}
+
+/* When any item in a deck is expanded, keep its box visually above neighbors */
+.deckItem { will-change: transform; }
 
 
 .cell:hover {
@@ -512,7 +710,6 @@ const PRIORITIES = props.priorities
   margin-top: -14px;
 }
 
-
 /* Inner grid aligns with the header columns */
 .laneRow__grid {
   --rowhead-w: 190px;
@@ -547,9 +744,9 @@ const PRIORITIES = props.priorities
 .grid > section.laneRow:nth-of-type(9) { z-index: 12; --lane-x: 64px; }
 .grid > section.laneRow:nth-of-type(10) { z-index: 11; --lane-x: 72px; }
 
-
 .laneRow.prio-low { background: color-mix(in srgb, #93c5fd 14%, var(--panel)); border-color: color-mix(in srgb, #93c5fd 22%, var(--border)); }
 .laneRow.prio-normal { background: color-mix(in srgb, #86efac 12%, var(--panel)); border-color: color-mix(in srgb, #86efac 18%, var(--border)); }
 .laneRow.prio-high { background: color-mix(in srgb, #fdba74 12%, var(--panel)); border-color: color-mix(in srgb, #fdba74 18%, var(--border)); }
 .laneRow.prio-critical { background: color-mix(in srgb, #fca5a5 12%, var(--panel)); border-color: color-mix(in srgb, #fca5a5 18%, var(--border)); }
+
 </style>
