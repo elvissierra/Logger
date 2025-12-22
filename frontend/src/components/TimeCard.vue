@@ -347,23 +347,28 @@ function onStop(){ emit('stop', props.card) }
   /* Knowledge Drop — Card styles: full vs compact, hover states, and small in-card controls */
   .tcard {
     display: grid;
-    grid-template-rows: auto 1fr auto; /* header | body grows | footer at bottom */
+    /* Important: avoid 1fr body growth so list cards don't inflate with empty space */
+    grid-template-rows: auto auto auto; /* header | body | footer */
     grid-auto-rows: min-content;
-    gap: .55rem;
+    align-content: start;
+    gap: .35rem;
+
     background: var(--card, #ffffff);
     border: 1px solid var(--border, #e5e7eb);
     border-radius: var(--radius, 12px);
-    padding: .75rem .9rem;
+    padding: .55rem .75rem;
+
     box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,.06));
     transition: box-shadow .15s ease, transform .08s ease, border-color .2s ease, background .2s ease;
+
     overflow: hidden;
-    min-height: 112px;
+    min-height: 0;
     color: var(--text, #111827);
     position: relative;
   }
   .tcard:hover { box-shadow: var(--shadow-md, 0 6px 16px rgba(0,0,0,.08)); border-color: color-mix(in srgb, var(--border, #e5e7eb) 70%, var(--primary, #5b8cff) 30%); }
   
-  .tcard__body { color: var(--text, #374151); min-height: 52px; overflow: hidden; }
+  .tcard__body { color: var(--text, #374151); min-height: 0; overflow: hidden; }
 
 /* ===== Compact (Weekly/Simple) Strict Folder Card ===== */
 .tcard.compact {
@@ -596,9 +601,9 @@ function onStop(){ emit('stop', props.card) }
   .link.more { background: transparent; border: none; color: var(--primary, #5b8cff); padding: 0; cursor: pointer; }
   
   /* footer actions */
-  .tcard__foot { display: flex; justify-content: flex-end; gap: .35rem; margin-top: 0; align-self: end;}
+  .tcard__foot { display: flex; justify-content: flex-end; gap: .3rem; margin-top: 0; align-self: end; }
   
-  .icon { border: 1px solid var(--border, #e5e7eb); border-radius: 8px; background: var(--panel-2, #f3f4f6); cursor: pointer; padding: .25rem .45rem; line-height: 1; }
+  .icon { border: 1px solid var(--border, #e5e7eb); border-radius: 8px; background: var(--panel-2, #f3f4f6); cursor: pointer; padding: .2rem .4rem; line-height: 1; }
   .icon:hover { background: #e9eef7; }
   .hint{ align-self:center; color:var(--muted); font-size:.85rem; margin-left:.25rem; }
   
