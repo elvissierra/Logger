@@ -366,7 +366,7 @@ const PRIORITIES = props.priorities
 
 /* Container for compact entries inside a cell (static deck, no drag) */
 .cell .droplist {
-  margin-top: 6px;
+  margin-top: 0px;
   position: relative;
   display: block;
   min-height: 0;
@@ -545,8 +545,14 @@ const PRIORITIES = props.priorities
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--panel-2) 92%, transparent);
   border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-md, 0 6px 16px rgba(0,0,0,.08));
+  transition: box-shadow .15s ease, border-color .15s ease;
   overflow: visible;
+}
+
+.projcard:hover {
+  box-shadow: var(--shadow-lg, 0 10px 28px rgba(0,0,0,.12));
+  border-color: color-mix(in srgb, var(--border) 60%, var(--primary) 40%);
 }
 
 

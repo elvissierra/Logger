@@ -322,13 +322,24 @@ function onStop(){ emit('stop', props.card) }
 
     <!-- Full (focus) body when not editing -->
     <section v-else class="tcard__body" @dblclick="editing = true">
-      <div class="meta" v-if="card.start_utc && card.end_utc">
+      <div class="meta" v-if="card.start_utc">
         <span class="time">
           {{ new Date(card.start_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }} →
-          {{ new Date(card.end_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }}
+          <span v-if="!isRunning && card.end_utc">
+            {{ new Date(card.end_utc).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }}
+          </span>
+          <span v-else>Now</span>
         </span>
         <span class="sep">•</span>
         <span class="hours">{{ fmtH(roundedDurationHours, 2) }} h</span>
+      </div>
+    
+      <div
+        v-if="(card.description && String(card.description).trim()) || (card.notes && String(card.notes).trim())"
+        class="tcard__details"
+      >
+        <p v-if="card.description" class="tcard__desc">{{ card.description }}</p>
+        <pre v-if="card.notes" class="tcard__notes">{{ card.notes }}</pre>
       </div>
     </section>
 
@@ -369,6 +380,31 @@ function onStop(){ emit('stop', props.card) }
   .tcard:hover { box-shadow: var(--shadow-md, 0 6px 16px rgba(0,0,0,.08)); border-color: color-mix(in srgb, var(--border, #e5e7eb) 70%, var(--primary, #5b8cff) 30%); }
   
   .tcard__body { color: var(--text, #374151); min-height: 0; overflow: hidden; }
+  .tcard__details {
+    margin-top: 8px;
+    display: grid;
+    gap: 6px;
+  }
+  
+  .tcard__desc {
+    margin: 0;
+    color: var(--text, #111827);
+    font-weight: 650;
+    line-height: 1.25;
+  }
+  
+  .tcard__notes {
+    margin: 0;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border, #e5e7eb);
+    background: color-mix(in srgb, var(--panel-2, #f3f4f6) 85%, transparent);
+    color: var(--text, #374151);
+    font: inherit;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
 
 /* ===== Compact (Weekly/Simple) Strict Folder Card ===== */
 .tcard.compact {

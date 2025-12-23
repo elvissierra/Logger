@@ -271,7 +271,7 @@ async function startLaneTimer(lane) {
     projectCode:  groupBy.value === 'project_code' ? lane.title : '',
     activity:     groupBy.value === 'activity'     ? lane.title : '',
     priority: meta.priority || 'Normal',
-    notes: meta.description || ''
+    notes: ''
   }
   await startTimer(seed)
 }
@@ -458,13 +458,18 @@ function quickAddToday(){
 
 function mapEntryToCard(e) {
   const parsed = parsePriorityAndCleanNotes(e.notes || '')
+  const clean = String(parsed.notes || '').replace(/\r\n/g, '\n')
+  const parts = clean.split('\n')
+  const desc = (parts.shift() || '').trim()
+  const notes = parts.join('\n').trim()
+
   return {
     id: String(e.id),
     jobTitle: e.job_title || '',
     projectCode: e.project_code,
     activity: e.activity,
-    description: '',
-    notes: parsed.notes,
+    description: desc,
+    notes: notes,
     priority: parsed.priority,
     start_utc: e.start_utc,
     end_utc: e.end_utc,
