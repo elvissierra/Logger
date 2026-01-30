@@ -15,8 +15,22 @@ Why necessary
 
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, select
 from datetime import datetime
+
+# Time rounding helpers and allowed increments
+from datetime import datetime
+
+ALLOWED_INCREMENTS = {1, 5, 10, 15}
+
+def round_datetime(dt: datetime, increment: int) -> datetime:
+    if increment not in ALLOWED_INCREMENTS:
+        increment = 5
+
+    seconds = increment * 60
+    epoch = dt.timestamp()
+    rounded = round(epoch / seconds) * seconds
+    return datetime.fromtimestamp(rounded, tz=dt.tzinfo)
 
 from app.models.time_entry import TimeEntry
 from app.schemas.time_entry import TimeEntryCreate, TimeEntryUpdate
@@ -140,3 +154,62 @@ def get_running_entry(
     if exclude_id:
         q = q.filter(TimeEntry.id != exclude_id)
     return q.order_by(TimeEntry.start_utc.desc()).first()
+
+
+# --- START/STOP entry helpers for time rounding ---
+import asyncio
+from sqlalchemy.ext.asyncio import AsyncSession
+
+async def start_time_entry(session: AsyncSession, user, payload):
+    """
+    Start a new time entry for the user, rounding to their preferred increment.
+    Stops any running entry at the rounded time.
+    Returns the new entry.
+    """
+    increment = getattr(user, 'time_increment_minutes', 5) or 5
+    now = round_datetime(datetime.utcnow(), increment)
+
+    async with session.begin():
+        # Stop any currently running entry for this user
+        running_entry = await session.execute(
+            select(TimeEntry)
+            .where(TimeEntry.user_id == user.id)
+            .where(TimeEntry.end_utc.is_(None))
+        )
+        running_entry = running_entry.scalars().first()
+
+        if running_entry:
+            running_entry.end_utc = now
+            session.add(running_entry)
+
+        # Create the new entry
+        entry = TimeEntry(
+            user_id=user.id,
+            start_utc=now,
+            project_code=payload.project_code,
+            notes=payload.notes,
+        )
+        # Optional: handle activity, job_title if present in payload
+        if hasattr(payload, 'activity'):
+            entry.activity = payload.activity
+        if hasattr(payload, 'job_title'):
+            entry.job_title = payload.job_title
+
+        session.add(entry)
+        await session.flush()
+        return entry
+
+
+async def stop_time_entry(session: AsyncSession, user, entry):
+    """
+    Stop a running entry, rounding end_time to user's increment.
+    Only sets end_time if not already set (idempotent).
+    """
+    increment = getattr(user, 'time_increment_minutes', 5) or 5
+    now = round_datetime(datetime.utcnow(), increment)
+
+    if entry.end_utc is None:
+        entry.end_utc = now
+        session.add(entry)
+
+    return entry

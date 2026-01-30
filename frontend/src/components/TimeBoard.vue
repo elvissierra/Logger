@@ -782,8 +782,8 @@ watch([currentWeekStart, groupBy], () => { load() })
             <option :value="5">5 min</option>
             <option :value="10">10 min</option>
             <option :value="15">15 min</option>
-            <option :value="20">20 min</option>
-            <option :value="30">30 min</option>
+            
+            
           </select>
         </label>
         <div class="goal">
