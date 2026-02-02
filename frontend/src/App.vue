@@ -2,9 +2,6 @@
 <script setup>
 import { ref, onErrorCaptured, computed, onMounted } from 'vue'
 import TimeBoard from './components/TimeBoard.vue'
-// Optional debug/simple view: visit http://localhost:5173/?sheet=1
-// to render the lightweight TimeSheet page instead of the board
-import TimeSheet from './components/TimeSheet.vue'
 import Login from './components/Login.vue'
 import { API_BASE, apiFetch, getCsrf } from './lib/api'
 
@@ -39,10 +36,6 @@ onErrorCaptured((e) => {
   return false
 })
 
-const view = ref(
-  new URLSearchParams(location.search).get('sheet') === '1' ? 'sheet' : 'board'
-)
-const showSheet = computed(() => view.value === 'sheet')
 const isAuthed = computed(() => !!(user.value && user.value.id))
 const username = computed(() => {
   const u = user.value
@@ -50,17 +43,6 @@ const username = computed(() => {
   const parts = String(u.email).split('@')
   return parts[0] || u.email
 })
-
-function setView (mode) {
-  view.value = mode === 'sheet' ? 'sheet' : 'board'
-  const url = new URL(window.location.href)
-  if (view.value === 'sheet') {
-    url.searchParams.set('sheet', '1')
-  } else {
-    url.searchParams.delete('sheet')
-  }
-  window.history.replaceState({}, '', url.toString())
-}
 
 // When LoginView succeeds, it emits the user payload so we can update app state
 function handleLoginSuccess (me) {
@@ -108,27 +90,6 @@ async function handleLogout () {
           <span class="shell__user-label">Signed in as:</span>
           <span class="shell__user-name">{{ username }}</span>
         </div>
-        <nav
-          class="shell__nav"
-          aria-label="View switch"
-        >
-          <button
-            type="button"
-            class="shell__navbtn"
-            :class="{ active: !showSheet }"
-            @click="setView('board')"
-          >
-            Board
-          </button>
-          <button
-            type="button"
-            class="shell__navbtn"
-            :class="{ active: showSheet }"
-            @click="setView('sheet')"
-          >
-            Timesheet
-          </button>
-        </nav>
         <button
           type="button"
           class="shell__logout"
@@ -152,8 +113,7 @@ async function handleLogout () {
         @login-success="handleLoginSuccess"
       />
 
-      <!-- Authenticated: show requested time view -->
-      <TimeSheet v-else-if="showSheet" />
+      <!-- Authenticated: show board -->
       <TimeBoard v-else :user="user" />
     </main>
   </div>
@@ -264,31 +224,6 @@ async function handleLogout () {
   margin: 0;
   font-size: 0.86rem;
   color: var(--muted);
-}
-.shell__nav {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-}
-.shell__navbtn {
-  padding: 0.4rem 0.9rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--muted);
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.06s ease;
-}
-.shell__navbtn:hover {
-  background: var(--btn-blue-bg-hover);
-  transform: translateY(1px);
-}
-.shell__navbtn.active {
-  background: var(--btn-blue-bg);
-  color: var(--primary);
-  border-color: color-mix(in srgb, var(--border) 50%, var(--primary) 50%);
 }
 
 .shell__user {
