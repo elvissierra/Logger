@@ -25,15 +25,13 @@
  * - Be careful when changing storage keys (they include group/week so per-cell order persists correctly).
  */
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import TimeCard from './TimeCard.vue'
 import TodayLog from './TodayLog.vue'
 import WeekLog from './WeekLog.vue'
 import { API_BASE, apiFetch, getCsrf } from '../lib/api'
 import {
   pad, startOfWeek, addDays, dateKey, labelFor,
   timeHMFromISO, composeISOFromLaneAndTime, laneKeyFromISO,
-  hoursBetweenRounded, roundHMToQuarter, roundDateToQuarter,
-  fmtH,
+  hoursBetweenRounded, fmtH,
 } from '../lib/time'
 
 // --- Projects (authoritative created_at for lane visibility) ---
@@ -91,8 +89,9 @@ const incrementMinutes = ref(Number(localStorage.getItem('logger.incrementMinute
 
 watch(incrementMinutes, (v) => {
   const n = Number(v)
-  const safe = Number.isFinite(n) ? String(Math.min(60, Math.max(1, Math.round(n)))) : '15'
-  localStorage.setItem('logger.incrementMinutes', safe)
+  const safeNum = Number.isFinite(n) ? Math.min(60, Math.max(1, Math.round(n))) : 15
+  if (incrementMinutes.value !== safeNum) incrementMinutes.value = safeNum
+  localStorage.setItem('logger.incrementMinutes', String(safeNum))
 }, { immediate: true })
 
 function _normInc() {
@@ -760,40 +759,82 @@ watch([currentWeekStart, groupBy], () => { load() })
         <button type="button" @click="prevWeek" title="Previous week">◀︎</button>
         <button type="button" @click="goToToday" title="This week">This Week</button>
         <button type="button" @click="nextWeek" title="Next week">▶︎</button>
-        <span class="range">{{ weekLabel }}</span>
+        <span class="range" :title="weekLabel">{{ weekLabel }}</span>
       </div>
-      <div class="toolbar">
-        <label class="group">
-          Group by
-          <select v-model="groupBy">
-            <option v-for="g in GROUPS" :key="g.value" :value="g.value">{{ g.label }}</option>
-          </select>
-        </label>
-        <label class="group">
-          Layout
-          <select v-model="layoutMode">
-            <option value="grid">Board</option>
-            <option value="simple">Simple</option>
-          </select>
-        </label>
-        <label class="group">
-          Increment
-          <select v-model.number="incrementMinutes">
-            <option :value="5">5 min</option>
-            <option :value="10">10 min</option>
-            <option :value="15">15 min</option>
-            
-            
-          </select>
-        </label>
+        <!-- Desktop / wide: show inline selects -->
+         <div class="toolbar">
+        <div class="toolbar__groups">
+          <label class="group">
+            <span class="group__lbl">Group by</span>
+            <select v-model="groupBy" aria-label="Group by">
+              <option v-for="g in GROUPS" :key="g.value" :value="g.value">{{ g.label }}</option>
+            </select>
+          </label>
+        
+          <label class="group">
+            <span class="group__lbl">Layout</span>
+            <select v-model="layoutMode" aria-label="Layout">
+              <option value="grid">Board</option>
+              <option value="simple">Simple</option>
+            </select>
+          </label>
+        
+          <label class="group">
+            <span class="group__lbl">Increment</span>
+            <select v-model.number="incrementMinutes" aria-label="Increment">
+              <option :value="1">1 min</option>
+              <option :value="5">5 min</option>
+              <option :value="10">10 min</option>
+              <option :value="15">15 min</option>
+            </select>
+          </label>
+        </div>
+      
+        <!-- Mobile / compressed: single centered dropdown -->
+        <details class="toolbar__editview">
+          <summary class="toolbar__editviewBtn" aria-label="Edit view">
+            Edit view
+            <span class="toolbar__chev" aria-hidden="true">▾</span>
+          </summary>
+        
+          <div class="toolbar__editviewPanel" role="group" aria-label="Edit view controls">
+            <label class="group group--stack">
+              <span class="group__lbl">Group by</span>
+              <select v-model="groupBy" aria-label="Group by">
+                <option v-for="g in GROUPS" :key="g.value" :value="g.value">{{ g.label }}</option>
+              </select>
+            </label>
+          
+            <label class="group group--stack">
+              <span class="group__lbl">Layout</span>
+              <select v-model="layoutMode" aria-label="Layout">
+                <option value="grid">Board</option>
+                <option value="simple">Simple</option>
+              </select>
+            </label>
+          
+            <label class="group group--stack">
+              <span class="group__lbl">Increment</span>
+              <select v-model.number="incrementMinutes" aria-label="Increment">
+                <option :value="1">1 min</option>
+                <option :value="5">5 min</option>
+                <option :value="10">10 min</option>
+                <option :value="15">15 min</option>
+              </select>
+            </label>
+          </div>
+        </details>
+      
         <div class="goal">
           <div class="bar"><i :style="{ width: (weeklyPct*100)+'%' }"></i></div>
           <span>{{ fmtH(weeklyHours, 2) }} / {{ TARGET_WEEKLY_HOURS }} h</span>
         </div>
-                <div v-if="runningLaneTitle" class="running-pill">
+      
+        <div v-if="runningLaneTitle" class="running-pill">
           Running: <span class="running-pill__name">{{ runningLaneTitle }}</span>
         </div>
-                <div class="toolbar__add">
+      
+        <div class="toolbar__add">
           <button type="button" @click="addLane">
             {{ groupBy === 'project_code' ? 'Add Project' : 'Add Activity' }}
           </button>
@@ -808,6 +849,7 @@ watch([currentWeekStart, groupBy], () => { load() })
             <button type="button" class="mini" @click="cancelAddLane">Cancel</button>
           </div>
         </div>
+      
         <button
           type="button"
           @click="toggleTheme"
@@ -956,10 +998,12 @@ watch([currentWeekStart, groupBy], () => { load() })
 }
 
 .board__header {
-  display: grid;
-  grid-template-columns: 1fr auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  gap: 10px;
+
   position: sticky;
   top: 0;
   z-index: 10;
@@ -974,6 +1018,8 @@ watch([currentWeekStart, groupBy], () => { load() })
   display: flex;
   align-items: center;
   gap: 6px;
+  flex: 1 1 260px;
+  min-width: 240px;
 }
 
 .nav button {
@@ -993,12 +1039,20 @@ watch([currentWeekStart, groupBy], () => { load() })
   margin-left: 0.4rem;
   font-weight: 700;
   color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: flex-end;
+  gap: 10px;
+  flex: 2 1 520px;
+  flex-wrap: wrap;
+  min-width: 280px;
 }
 
 .toolbar button {
@@ -1015,11 +1069,17 @@ watch([currentWeekStart, groupBy], () => { load() })
 }
 
 .group {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
   color: var(--muted);
-  font-weight: 600;
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+
+.group select {
+  max-width: 180px;
 }
 
 select {
@@ -1052,6 +1112,75 @@ select {
   min-width: 180px;
 }
 
+.toolbar__groups {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toolbar__editview {
+  display: none;
+  position: relative;
+}
+
+.toolbar__editviewBtn {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+
+  padding: 0.38rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--btn-blue-bg);
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.toolbar__editviewBtn::-webkit-details-marker { display: none; }
+
+.toolbar__chev {
+  font-size: 0.85em;
+  opacity: 0.9;
+}
+
+.toolbar__editview[open] .toolbar__editviewBtn {
+  background: var(--btn-blue-bg-hover);
+  border-color: color-mix(in srgb, var(--border) 50%, var(--primary) 50%);
+}
+
+.toolbar__editviewPanel {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: calc(100% + 8px);
+
+  width: min(92vw, 360px);
+  padding: 10px;
+  border-radius: 14px;
+
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+
+  display: grid;
+  gap: 10px;
+  z-index: 200;
+}
+
+.group--stack {
+  display: grid;
+  gap: 6px;
+  white-space: normal;
+}
+
+.group--stack select {
+  width: 100%;
+  max-width: 100%;
+}
 
 /* Weekly goal bar */
 .goal {
@@ -1267,5 +1396,106 @@ select {
 /* Slight lift on hover so the active card is visually on top */
 .simple__droplist :deep(.tcard.compact:hover) {
   z-index: 5;
+}
+
+@media (max-width: 860px) {
+  /* Keep header + toolbar on ONE row */
+  .board__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: nowrap;
+  }
+
+  /* Left nav cluster */
+  .nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+
+  .nav button {
+    padding: 6px 10px;
+    border-radius: 12px;
+  }
+
+  .nav .range {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    font-weight: 750;
+  }
+
+  /* Toolbar becomes the right-side row container */
+  .toolbar {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: nowrap;
+  }
+
+  /* Mobile uses Edit view dropdown only */
+  .toolbar__groups { display: none !important; }
+  .toolbar__editview { display: block; margin: 0; flex: 0 0 auto; }
+
+  /* Progress + hours on the right */
+  .goal {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: flex-end;
+  }
+
+  .goal .bar {
+    width: min(32vw, 220px);
+    min-width: 90px;
+  }
+
+  .goal span {
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+
+  /* Hide lower-priority controls */
+  .running-pill { display: none !important; }
+  .toolbar__add { display: none !important; }
+
+  /* Theme button stays compact */
+  .toolbar > button:last-child {
+    padding: 6px 10px;
+    border-radius: 12px;
+    flex: 0 0 auto;
+  }
+
+  /* Center the edit dropdown panel */
+  .toolbar__editviewPanel {
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(92vw, 360px);
+  }
+}
+
+@media (max-width: 520px) {
+  .toolbar {
+    gap: 8px;
+  }
+
+  .group select {
+    max-width: 140px;
+  }
+
 }
 </style>

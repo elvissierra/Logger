@@ -176,7 +176,7 @@ const PRIORITIES = props.priorities
                   title="Timer running"
                   aria-label="Timer running"
                 >
-                  🌀
+                  ⏱️
                 </span>
               </header>
 
@@ -461,6 +461,7 @@ const PRIORITIES = props.priorities
   background: transparent;
   border: none;
   min-height: auto;
+  padding: 0;
 }
 
 /* Collapse top-left header spacer */
