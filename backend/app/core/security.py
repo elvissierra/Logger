@@ -28,10 +28,19 @@ from fastapi import Request, HTTPException
 # Symmetric key for JWT signing; keep secret in prod (env).
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-change-me")
 ALGORITHM = "HS256"
-# Short-lived access tokens; refresh flow issues a new access token when needed.
-ACCESS_TOKEN_MIN = int(os.getenv("ACCESS_TOKEN_MIN", "10"))
-# Longer-lived refresh token rotation window.
-REFRESH_TOKEN_DAYS = int(os.getenv("REFRESH_TOKEN_DAYS", "14"))
+
+def _int_env(name: str, default: int) -> int:
+    val = os.getenv(name)
+    if val is None or val.strip() == "":
+        return default
+    try:
+        return int(val)
+    except ValueError:
+        return default
+
+ACCESS_TOKEN_MIN = _int_env("ACCESS_TOKEN_MIN", 10)
+REFRESH_TOKEN_DAYS = _int_env("REFRESH_TOKEN_DAYS", 14)
+
 # Cookie attributes affect browser storage & sending behavior across subdomains/schemes.
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "0") == "1"
 COOKIE_DOMAIN = os.getenv("COOKIE_DOMAIN") or None
