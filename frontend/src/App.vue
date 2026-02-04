@@ -12,18 +12,22 @@ const user = ref(null)
 // Try to bootstrap from existing session cookie
 onMounted(async () => {
   try {
-    const r = await apiFetch(`${API_BASE}/api/auth/me`)
+    let r = await apiFetch(`${API_BASE}/api/auth/me`)
+    if (r.status === 401) {
+      // attempt refresh once, then retry /me
+      const rr = await apiFetch(`${API_BASE}/api/auth/refresh`, { method: 'POST' })
+      if (rr.ok) r = await apiFetch(`${API_BASE}/api/auth/me`)
+    }
+
     if (r.ok) {
       const me = await r.json()
       user.value = me
       localStorage.setItem('logger.userId', me.id)
-    } else if (r.status === 401) {
-      // No valid session; ensure we don't carry stale localStorage state
+    } else {
       localStorage.removeItem('logger.userId')
     }
   } catch (e) {
     console.error(e)
-    // Leave user null; UI will fall back to login view
     localStorage.removeItem('logger.userId')
   } finally {
     ready.value = true

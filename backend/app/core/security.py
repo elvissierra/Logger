@@ -97,20 +97,50 @@ def decode_token(token: str) -> dict:
 
 
 def set_auth_cookies(resp, access: str, refresh: str, csrf: str):
-    """
-    Set httpOnly access/refresh cookies and a readable csrf_token for SPA requests.
-    SameSite is configurable; for cross-site embeds, use SameSite=None and secure cookies over HTTPS.
-    """
-    common = dict(samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE, domain=COOKIE_DOMAIN)
-    resp.set_cookie("access_token", access, httponly=True, **common)
-    resp.set_cookie("refresh_token", refresh, httponly=True, **common)
-    # readable CSRF token for SPA (double-submit)
-    resp.set_cookie("csrf_token", csrf, httponly=False, **common)
+    access_max_age = ACCESS_TOKEN_MIN * 60
+    refresh_max_age = REFRESH_TOKEN_DAYS * 24 * 60 * 60
+
+    common = dict(
+        samesite=COOKIE_SAMESITE,
+        secure=COOKIE_SECURE,
+        domain=COOKIE_DOMAIN,
+        path="/",
+    )
+
+    resp.set_cookie(
+        "access_token",
+        access,
+        httponly=True,
+        max_age=access_max_age,
+        expires=access_max_age,
+        **common,
+    )
+    resp.set_cookie(
+        "refresh_token",
+        refresh,
+        httponly=True,
+        max_age=refresh_max_age,
+        expires=refresh_max_age,
+        **common,
+    )
+    resp.set_cookie(
+        "csrf_token",
+        csrf,
+        httponly=False,
+        max_age=refresh_max_age,
+        expires=refresh_max_age,
+        **common,
+    )
 
 
 def clear_auth_cookies(resp):
     for name in ("access_token", "refresh_token", "csrf_token"):
-        resp.delete_cookie(name, domain=COOKIE_DOMAIN, samesite=COOKIE_SAMESITE)
+        resp.delete_cookie(
+            name,
+            domain=COOKIE_DOMAIN,
+            samesite=COOKIE_SAMESITE,
+            path="/",
+        )
 
 
 def require_csrf(request: Request):
