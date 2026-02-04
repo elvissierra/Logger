@@ -27,6 +27,10 @@ from app.core.database import Base, engine
 from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+
 APP_ENVIRONMENT = os.getenv("APP_ENV", "dev").lower()
 
 APP_NAME = os.getenv("APP_NAME", "Logger API")
@@ -133,8 +137,23 @@ def health_check():
     return {"status": "ok"}
 
 
-# Root hint with docs & health pointers
-@app.get("/", include_in_schema=False)
-def root():
-    # Small landing hint
-    return {"service": APP_NAME, "docs": "/docs", "health": "/healthz"}
+SPA_DIR = Path(__file__).resolve().parent / "app" / "static_dist"
+
+if SPA_DIR.exists():
+    assets_dir = SPA_DIR / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+    @app.get("/", include_in_schema=False)
+    def spa_index():
+        return FileResponse(str(SPA_DIR / "index.html"))
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa_fallback(full_path: str):
+        # Do not hijack API paths
+        if full_path.startswith("api/"):
+            return FileResponse(str(SPA_DIR / "index.html"))
+        candidate = SPA_DIR / full_path
+        if candidate.exists() and candidate.is_file():
+            return FileResponse(str(candidate))
+        return FileResponse(str(SPA_DIR / "index.html"))

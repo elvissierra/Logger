@@ -1,7 +1,9 @@
 // Shared API helpers for the Logger frontend
 const rawBase = import.meta.env.VITE_API_BASE
 // Treat an explicitly-set empty string as a valid value so we can use relative paths in prod
-export const API_BASE = rawBase !== undefined ? rawBase : 'http://127.0.0.1:8000'
+export const API_BASE = rawBase !== undefined
+  ? rawBase
+  : (import.meta.env.PROD ? '' : 'http://127.0.0.1:8000')
 
 export function getCsrf () {
   const m = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)

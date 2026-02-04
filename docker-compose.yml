@@ -4,7 +4,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: backend/Dockerfile
+      dockerfile: backend/Dockerfile-dev
     environment:
       - DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/logger
       - BACKEND_CORS_ORIGINS=http://localhost:8080,http://127.0.0.1:8080
