@@ -327,11 +327,11 @@ const PRIORITIES = props.priorities
 /* Weekly board scroller */
 .board__scroller {
   margin-top: 6px;
-  padding: 10px 10px 14px;
+  padding: 12px 12px 16px;
   background: var(--panel);
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
+  border-radius: 16px;
+  border: 1.5px solid var(--border);
+  box-shadow: 0 2px 8px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.03);
   overflow: auto;
 }
 
@@ -349,9 +349,9 @@ const PRIORITIES = props.priorities
 }
 
 .cell {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--panel) 94%, var(--accent, #86d2c1) 6%);
+  border: 1.5px solid color-mix(in srgb, var(--border) 80%, var(--accent, #86d2c1) 20%);
+  border-radius: 16px;
 
   /* tighter + predictable whitespace */
   min-height: var(--cell-min-h);
@@ -362,6 +362,7 @@ const PRIORITIES = props.priorities
 
   overflow: visible;
   isolation: isolate;
+  transition: box-shadow .15s ease, border-color .15s ease;
 }
 
 /* Container for compact entries inside a cell (static deck, no drag) */
@@ -453,8 +454,8 @@ const PRIORITIES = props.priorities
 
 
 .cell:hover {
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 25%, transparent);
-  border-color: color-mix(in srgb, var(--border) 60%, var(--primary) 40%);
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--primary) 20%, transparent), 0 4px 12px rgba(0,0,0,.06);
+  border-color: color-mix(in srgb, var(--border) 50%, var(--primary) 50%);
 }
 
 .cell--head {
@@ -488,8 +489,9 @@ const PRIORITIES = props.priorities
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 5px 6px;
-  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-2) 60%, transparent);
   color: var(--muted);
   font-weight: 600;
   font-size: 0.88rem;
@@ -499,11 +501,13 @@ const PRIORITIES = props.priorities
 
 .dayhead strong {
   letter-spacing: 0.01em;
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--text);
 }
 
 .dayhead small {
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--primary);
   opacity: 0.9;
   font-size: 0.8rem;
   flex-shrink: 0;
@@ -512,11 +516,11 @@ const PRIORITIES = props.priorities
 /* Per-cell summary + add button */
 .cell__sum {
   position: absolute;
-  top: 4px;
-  left: 6px;
+  top: 8px;
+  left: 10px;
   font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--muted);
+  font-weight: 700;
+  color: var(--primary);
   padding: 0;
   background: transparent;
   border: none;
@@ -535,6 +539,19 @@ const PRIORITIES = props.priorities
   background: transparent;
 }
 
+.cell__actions .mini.icon {
+  background: color-mix(in srgb, var(--primary) 12%, var(--panel));
+  border-color: color-mix(in srgb, var(--primary) 25%, var(--border));
+  color: var(--primary);
+  font-weight: 700;
+  transition: background .12s ease, transform .06s ease;
+}
+
+.cell__actions .mini.icon:hover {
+  background: color-mix(in srgb, var(--primary) 20%, var(--panel));
+  transform: scale(1.08);
+}
+
 /* Row-header project card */
 .projcard {
   position: relative;
@@ -542,18 +559,18 @@ const PRIORITIES = props.priorities
   flex-direction: column;
   justify-content: space-between;
   gap: 6px;
-  padding: 10px 10px 9px;
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--panel-2) 92%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
-  box-shadow: var(--shadow-md, 0 6px 16px rgba(0,0,0,.08));
-  transition: box-shadow .15s ease, border-color .15s ease;
+  padding: 12px 12px 10px;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1.5px solid color-mix(in srgb, var(--border) 80%, transparent);
+  box-shadow: 0 2px 8px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.03);
+  transition: box-shadow .15s ease, border-color .15s ease, transform .1s ease;
   overflow: visible;
 }
 
 .projcard:hover {
-  box-shadow: var(--shadow-lg, 0 10px 28px rgba(0,0,0,.12));
-  border-color: color-mix(in srgb, var(--border) 60%, var(--primary) 40%);
+  box-shadow: 0 6px 20px rgba(0,0,0,.10), 0 2px 6px rgba(0,0,0,.05);
+  border-color: color-mix(in srgb, var(--border) 50%, var(--primary) 50%);
 }
 
 
@@ -744,7 +761,7 @@ const PRIORITIES = props.priorities
 
 /* Visual folder chrome for the whole lane row */
 .laneRow::before {
-  content: "";
+  content: “”;
   position: absolute;
   left: 0;
   right: 0;
@@ -754,9 +771,9 @@ const PRIORITIES = props.priorities
   border-radius: 18px;
 
   /* stronger, more “concrete” lane border */
-  border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
-  background: color-mix(in srgb, var(--panel) 96%, transparent);
-  box-shadow: var(--shadow-sm);
+  border: 1.5px solid color-mix(in srgb, var(--border) 88%, transparent);
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  box-shadow: 0 2px 10px rgba(0,0,0,.05), 0 1px 3px rgba(0,0,0,.03);
 
   z-index: 0;
 }
@@ -795,20 +812,26 @@ const PRIORITIES = props.priorities
 
 
 .laneRow.prio-low::before {
-  background: color-mix(in srgb, #93c5fd 14%, var(--panel));
-  border-color: color-mix(in srgb, #93c5fd 22%, var(--border));
+  background: color-mix(in srgb, #93c5fd 16%, var(--panel));
+  border-color: color-mix(in srgb, #93c5fd 28%, var(--border));
 }
 .laneRow.prio-normal::before {
-  background: color-mix(in srgb, #86efac 12%, var(--panel));
-  border-color: color-mix(in srgb, #86efac 18%, var(--border));
+  background: color-mix(in srgb, #86efac 14%, var(--panel));
+  border-color: color-mix(in srgb, #86efac 24%, var(--border));
 }
 .laneRow.prio-high::before {
-  background: color-mix(in srgb, #fdba74 12%, var(--panel));
-  border-color: color-mix(in srgb, #fdba74 18%, var(--border));
+  background: color-mix(in srgb, #fdba74 16%, var(--panel));
+  border-color: color-mix(in srgb, #fdba74 28%, var(--border));
 }
 .laneRow.prio-critical::before {
-  background: color-mix(in srgb, #fca5a5 12%, var(--panel));
-  border-color: color-mix(in srgb, #fca5a5 18%, var(--border));
+  background: color-mix(in srgb, #fca5a5 16%, var(--panel));
+  border-color: color-mix(in srgb, #fca5a5 28%, var(--border));
 }
+
+/* Priority-tinted cells within lanes */
+.laneRow.prio-low .cell { background: color-mix(in srgb, #93c5fd 8%, var(--panel)); border-color: color-mix(in srgb, #93c5fd 18%, var(--border)); }
+.laneRow.prio-normal .cell { background: color-mix(in srgb, #86efac 8%, var(--panel)); border-color: color-mix(in srgb, #86efac 18%, var(--border)); }
+.laneRow.prio-high .cell { background: color-mix(in srgb, #fdba74 8%, var(--panel)); border-color: color-mix(in srgb, #fdba74 18%, var(--border)); }
+.laneRow.prio-critical .cell { background: color-mix(in srgb, #fca5a5 8%, var(--panel)); border-color: color-mix(in srgb, #fca5a5 18%, var(--border)); }
 
 </style>

@@ -109,6 +109,33 @@ function roundDateToIncrement(dt, mode = 'round') {
   return new Date(k * step)
 }
 
+// Compute a stop time that is an exact multiple of the increment from a given start.
+// This ensures durations are always clean multiples (e.g., 15m, 30m, 45m).
+// Uses ceil so partial increments round up to the next full increment.
+function snapStopToIncrement(startIso, now) {
+  const mins = _normInc()
+  const step = mins * 60 * 1000
+  const startMs = new Date(startIso).getTime()
+  const nowMs = (now instanceof Date ? now : new Date(now)).getTime()
+  const elapsed = nowMs - startMs
+  // At minimum one increment; ceil so partial work rounds up
+  const increments = Math.max(1, Math.ceil(elapsed / step))
+  return new Date(startMs + increments * step)
+}
+
+// Find the running entry's card data from swimlanes so we can read its start_utc
+function findRunningCard() {
+  if (!runningId.value) return null
+  const rid = String(runningId.value)
+  for (const lane of swimlanes.value) {
+    for (const col of lane.columns) {
+      const card = col.cards?.find(c => String(c.id) === rid)
+      if (card) return card
+    }
+  }
+  return null
+}
+
 function roundHMToIncrement(hm, mode = 'round') {
   // hm: "HH:MM" in 24h
   const mins = _normInc()
@@ -144,7 +171,13 @@ async function stopRunningIfAny () {
 
   const id = runningId.value
   try {
-    const roundedStop = roundDateToIncrement(new Date(), 'ceil')
+    // Compute stop time as start + N*increment so duration is always a clean multiple.
+    // If we can't find the running card (stale pointer), fall back to clock-aligned rounding.
+    const runningCard = findRunningCard()
+    const now = new Date()
+    const roundedStop = runningCard?.start_utc
+      ? snapStopToIncrement(runningCard.start_utc, now)
+      : roundDateToIncrement(now, 'ceil')
     const res = await apiFetch(`${API_BASE}/api/time-entries/${id}`, {
       method: 'PATCH',
       headers: {

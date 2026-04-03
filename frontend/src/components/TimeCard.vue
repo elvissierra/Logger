@@ -292,19 +292,19 @@ function onStop(){ emit('stop', props.card) }
           <div v-if="!collapsed" class="folderCard__rail">
             <button
               class="folderCard__btn"
-              :title="isRunning ? 'Stop' : 'Start'"
-              :aria-label="isRunning ? 'Stop' : 'Start'"
-              @click.stop="isRunning ? onStop() : onStart()"
-            >
-              {{ isRunning ? '■' : '▶︎' }}
-            </button>
-            <button
-              class="folderCard__btn"
               title="Edit"
               aria-label="Edit"
               @click.stop="editing = true"
             >
-              ⋯
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z"/></svg>
+            </button>
+            <button
+              class="folderCard__btn"
+              :title="isRunning ? 'Stop timer' : 'More actions'"
+              :aria-label="isRunning ? 'Stop timer' : 'More actions'"
+              @click.stop="isRunning ? onStop() : onStart()"
+            >
+              {{ isRunning ? '■' : '⋯' }}
             </button>
           </div>
           <!-- Footer pills -->
@@ -467,17 +467,22 @@ function onStop(){ emit('stop', props.card) }
 
 .folderCard__body {
   background: var(--folder-surface);
-  border: 1px solid var(--folder-border);
+  border: 1.5px solid var(--folder-border);
   border-radius: var(--folder-radius);
   padding: 14px 12px 10px 12px;
 
   display: grid;
   grid-template-columns: 1fr auto;
   grid-template-rows: auto auto;
-  gap: 10px 10px;
+  gap: 8px 10px;
 
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 2px 8px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
   overflow: hidden;
+  transition: box-shadow .15s ease, transform .1s ease;
+}
+
+.folderCard__body:hover {
+  box-shadow: 0 4px 14px rgba(0,0,0,.12), 0 2px 4px rgba(0,0,0,.06);
 }
 
 /* When the tab is on a side, square that top corner so the tab can sit flush */
@@ -559,24 +564,34 @@ function onStop(){ emit('stop', props.card) }
 }
 
 .folderCard__btn {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   padding: 0;
-  border-radius: 12px;
-  border: 1px solid rgba(0,0,0,.12);
-  background: rgba(255,255,255,.60);
+  border-radius: 10px;
+  border: 1.5px solid rgba(0,0,0,.15);
+  background: rgba(255,255,255,.65);
+  backdrop-filter: blur(4px);
   cursor: pointer;
   font-weight: 900;
+  font-size: 0.85rem;
   line-height: 1;
   display: grid;
   place-items: center;
   box-sizing: border-box;
   appearance: none;
   -webkit-appearance: none;
+  color: rgba(0,0,0,.58);
+  transition: background .12s ease, border-color .12s ease, transform .06s ease;
 }
 
 .folderCard__btn:hover {
-  background: rgba(255,255,255,.80);
+  background: rgba(255,255,255,.88);
+  border-color: rgba(0,0,0,.22);
+  transform: translateY(-1px);
+}
+
+.folderCard__btn svg {
+  display: block;
 }
 
 .folderCard__footer {
@@ -612,10 +627,10 @@ function onStop(){ emit('stop', props.card) }
   .tcard__head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .6rem; }
   .grip { cursor: default; user-select: none; font-size: 1rem; line-height: 1; opacity: .7; }
 /* Folder tone palette (use stackIndex to rotate tones for stacked entries) */
-.folderCard--tone-1 { --folder-surface: #bfe3ff; --folder-border: color-mix(in srgb, #3b82f6 28%, rgba(0,0,0,.12)); }
-.folderCard--tone-2 { --folder-surface: #bff7ea; --folder-border: color-mix(in srgb, #14b8a6 26%, rgba(0,0,0,.12)); }
-.folderCard--tone-3 { --folder-surface: #ffd7b0; --folder-border: color-mix(in srgb, #f97316 26%, rgba(0,0,0,.12)); }
-.folderCard--tone-4 { --folder-surface: #ffb7b7; --folder-border: color-mix(in srgb, #ef4444 26%, rgba(0,0,0,.12)); }
+.folderCard--tone-1 { --folder-surface: #b8deff; --folder-border: color-mix(in srgb, #3b82f6 32%, rgba(0,0,0,.14)); }
+.folderCard--tone-2 { --folder-surface: #b5f0e0; --folder-border: color-mix(in srgb, #14b8a6 30%, rgba(0,0,0,.14)); }
+.folderCard--tone-3 { --folder-surface: #ffd0a0; --folder-border: color-mix(in srgb, #f97316 30%, rgba(0,0,0,.14)); }
+.folderCard--tone-4 { --folder-surface: #ffadad; --folder-border: color-mix(in srgb, #ef4444 30%, rgba(0,0,0,.14)); }
   .tcard__title { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
   .title { font-weight: 700; letter-spacing: .2px; }
   .chip { font-size: .75rem; padding: .15rem .45rem; border-radius: 999px; background: color-mix(in srgb, var(--primary, #5b8cff) 18%, transparent); color: var(--text, #111827); border: 1px solid var(--border, #e5e7eb); }

@@ -243,7 +243,10 @@ function fmtTodayLabel() {
               :running-id="runningId"
               :now-tick="nowTick"
               :increment-minutes="incrementMinutes"
-              :compact="false"
+              :compact="true"
+              :stack-index="0"
+              :tab-side="'left'"
+              :collapsed="false"
               @start="startTimer"
               @stop="stopTimer"
               @save="saveCard"
@@ -258,14 +261,17 @@ function fmtTodayLabel() {
             </summary>
             <div class="todayLane__olderList">
               <TimeCard
-                v-for="c in x.older"
+                v-for="(c, ci) in x.older"
                 :key="c.id"
                 :card="c"
                 :open-on-mount="c.__new === true"
                 :running-id="runningId"
                 :now-tick="nowTick"
                 :increment-minutes="incrementMinutes"
-                :compact="false"
+                :compact="true"
+                :stack-index="ci + 1"
+                :tab-side="((ci + 1) % 2 === 0) ? 'left' : 'right'"
+                :collapsed="false"
                 @start="startTimer"
                 @stop="stopTimer"
                 @save="saveCard"
@@ -286,7 +292,7 @@ function fmtTodayLabel() {
 
 <style scoped>
 /* (Styles identical to the earlier patch concept; kept concise and local to TodayLog) */
-.focus { width: 100%; margin: 12px 0 16px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+.focus { width: 100%; margin: 12px 0 16px; background: var(--panel); border: 1.5px solid var(--border); border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.03); }
 .focus__header { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 14px; border-bottom: 1px solid var(--border); }
 .focus__hours { color: var(--muted); font-weight: 700; }
 .focus__layout { display: grid; align-items: start; grid-template-columns: 340px 1fr; gap: 16px; padding: 12px; }
@@ -301,16 +307,22 @@ function fmtTodayLabel() {
 
 .todayLane {
   background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 16px;
   overflow: hidden;
-  box-shadow: var(--shadow-md, 0 6px 16px rgba(0,0,0,.08));
+  box-shadow: 0 2px 8px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.03);
   transition: box-shadow .15s ease, border-color .15s ease;
 }
 .todayLane:hover {
-  box-shadow: var(--shadow-lg, 0 10px 28px rgba(0,0,0,.12));
-  border-color: color-mix(in srgb, var(--border) 60%, var(--primary) 40%);
+  box-shadow: 0 6px 20px rgba(0,0,0,.10), 0 2px 6px rgba(0,0,0,.05);
+  border-color: color-mix(in srgb, var(--border) 50%, var(--primary) 50%);
 }
+
+/* Priority-tinted lane backgrounds (match WeekLog) */
+.todayLane.prio-low { background: color-mix(in srgb, #93c5fd 8%, var(--panel)); border-color: color-mix(in srgb, #93c5fd 22%, var(--border)); }
+.todayLane.prio-normal { background: color-mix(in srgb, #86efac 8%, var(--panel)); border-color: color-mix(in srgb, #86efac 22%, var(--border)); }
+.todayLane.prio-high { background: color-mix(in srgb, #fdba74 8%, var(--panel)); border-color: color-mix(in srgb, #fdba74 22%, var(--border)); }
+.todayLane.prio-critical { background: color-mix(in srgb, #fca5a5 8%, var(--panel)); border-color: color-mix(in srgb, #fca5a5 22%, var(--border)); }
 .todayLane__head { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--border); }
 .todayLane__left { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .todayLane__title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -322,8 +334,8 @@ function fmtTodayLabel() {
 .todayLane__desc { font-size: 0.82rem; color: var(--text); opacity: 0.92; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 520px; }
 .todayLane__desc--empty { color: var(--muted); }
 
-.todayLane__primary { padding: 10px; display: grid; gap: 10px; }
-.todayLane__older { margin: 0 10px 10px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--border) 82%, transparent); background: color-mix(in srgb, var(--panel) 92%, transparent); padding: 6px 8px; }
+.todayLane__primary { padding: 10px 12px; display: grid; gap: 10px; }
+.todayLane__older { margin: 0 12px 12px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--border) 82%, transparent); background: color-mix(in srgb, var(--panel) 92%, transparent); padding: 8px 10px; }
 .todayLane__older summary { cursor: pointer; list-style: none; font-weight: 750; font-size: 0.84rem; }
 .todayLane__older summary::-webkit-details-marker { display: none; }
 .todayLane__older .muted { font-weight: 650; color: var(--muted); }
