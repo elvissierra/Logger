@@ -299,12 +299,22 @@ function onStop(){ emit('stop', props.card) }
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5l2 2L5 13H3v-2L11.5 2.5z"/></svg>
             </button>
             <button
-              class="folderCard__btn"
-              :title="isRunning ? 'Stop timer' : 'More actions'"
-              :aria-label="isRunning ? 'Stop timer' : 'More actions'"
-              @click.stop="isRunning ? onStop() : onStart()"
+              v-if="isRunning"
+              class="folderCard__btn folderCard__btn--stop"
+              title="Stop timer"
+              aria-label="Stop timer"
+              @click.stop="onStop()"
             >
-              {{ isRunning ? '■' : '⋯' }}
+              ■
+            </button>
+            <button
+              v-else
+              class="folderCard__btn folderCard__btn--start"
+              title="Start timer"
+              aria-label="Start timer"
+              @click.stop="onStart()"
+            >
+              ▶
             </button>
           </div>
           <!-- Footer pills -->
@@ -592,6 +602,24 @@ function onStop(){ emit('stop', props.card) }
 
 .folderCard__btn svg {
   display: block;
+}
+
+.folderCard__btn--stop {
+  background: #ef4444;
+  border-color: #b91c1c;
+  color: #fff;
+}
+.folderCard__btn--stop:hover {
+  background: #dc2626;
+  border-color: #991b1b;
+}
+
+.folderCard__btn--start {
+  color: #065f46;
+}
+.folderCard__btn--start:hover {
+  background: #ecfdf5;
+  border-color: #10b981;
 }
 
 .folderCard__footer {

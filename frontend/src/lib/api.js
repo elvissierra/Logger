@@ -5,9 +5,40 @@ export const API_BASE = rawBase !== undefined
   ? rawBase
   : (import.meta.env.PROD ? '' : 'http://127.0.0.1:8000')
 
+// Read the CSRF cookie. Backend uses `__Host-csrf_token` when COOKIE_SECURE=1 (prod)
+// and plain `csrf_token` in dev. Try the prefixed name first.
 export function getCsrf () {
-  const m = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)
-  return m ? decodeURIComponent(m[1]) : ''
+  const prefixed = document.cookie.match(/(?:^|; )__Host-csrf_token=([^;]+)/)
+  if (prefixed) return decodeURIComponent(prefixed[1])
+  const plain = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/)
+  return plain ? decodeURIComponent(plain[1]) : ''
+}
+
+// Single-flight refresh: if many requests 401 simultaneously we must only fire ONE
+// /refresh call. Otherwise the second refresh sees the already-rotated JTI and trips
+// the reuse-detection guard, killing the legitimate session.
+let _refreshInFlight = null
+function refreshOnce () {
+  if (_refreshInFlight) return _refreshInFlight
+  _refreshInFlight = (async () => {
+    try {
+      const r = await fetch(`${API_BASE}/api/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: (() => {
+          const csrf = getCsrf()
+          return csrf ? { 'X-CSRF-Token': csrf } : {}
+        })()
+      })
+      return r.ok
+    } catch (_) {
+      return false
+    } finally {
+      // Clear on next tick so any concurrent callers awaiting this promise still see the result.
+      setTimeout(() => { _refreshInFlight = null }, 0)
+    }
+  })()
+  return _refreshInFlight
 }
 
 // fetch wrapper: includes credentials and refreshes on 401 (except for auth endpoints)
@@ -32,14 +63,8 @@ export async function apiFetch (url, opts = {}) {
     return res
   }
 
-  // Attempt refresh once.
-  let refreshed = false
-  try {
-    const r = await fetch(`${API_BASE}/api/auth/refresh`, { method: 'POST', credentials: 'include' })
-    refreshed = r.ok
-  } catch (_) {
-    refreshed = false
-  }
+  // Attempt refresh once (single-flight; concurrent 401s share the same promise).
+  const refreshed = await refreshOnce()
 
   if (refreshed) {
     // Retry the original request once.

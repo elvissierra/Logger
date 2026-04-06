@@ -34,6 +34,8 @@ from app.core.security import (
     clear_auth_cookies,
     pwd_context,
     require_csrf,
+    ACCESS_COOKIE,
+    REFRESH_COOKIE,
 )
 
 router = APIRouter()
@@ -51,7 +53,7 @@ def _user_by_id(db: Session, user_id: str) -> User | None:
 def _verify_and_get_user_from_access(
     request: Request, db: Session = Depends(get_db)
 ) -> User:
-    token = request.cookies.get("access_token")
+    token = request.cookies.get(ACCESS_COOKIE)
     if not token:
         raise HTTPException(status_code=401, detail="Missing access token")
     payload = decode_token(token)
@@ -109,7 +111,10 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
 # Validate refresh token (type, jti, hash, version), rotate both tokens, set cookies; returns user
 @router.post("/refresh", response_model=UserOut)
 def refresh(response: Response, request: Request, db: Session = Depends(get_db)):
-    token = request.cookies.get("refresh_token")
+    # CSRF: refresh is a state-changing call (mints new tokens, mutates server refresh state),
+    # so it must be protected against cross-site triggers.
+    require_csrf(request)
+    token = request.cookies.get(REFRESH_COOKIE)
     if not token:
         raise HTTPException(status_code=401, detail="Missing refresh token")
     payload = decode_token(token)
@@ -121,11 +126,20 @@ def refresh(response: Response, request: Request, db: Session = Depends(get_db))
     # Token version check (revocation)
     if str(payload.get("ver", "0")) != str(user.token_version or "0"):
         raise HTTPException(status_code=401, detail="Refresh revoked by version bump")
-    # verify token matches stored hash and jti (rotation)
+    # Refresh-reuse detection (RFC 6819 §5.2.2.3): a previously rotated token being
+    # presented is treated as theft → burn the entire family by bumping token_version
+    # and clearing stored refresh state. The legitimate user will be logged out and
+    # forced to re-authenticate, but the attacker is locked out too.
     if payload.get("jti") != user.refresh_jti or not pwd_context.verify(
         token, user.refresh_token_hash
     ):
-        raise HTTPException(status_code=401, detail="Refresh revoked")
+        user.token_version = str(int(str(user.token_version or "0")) + 1)
+        user.refresh_token_hash = None
+        user.refresh_jti = None
+        db.add(user)
+        db.commit()
+        clear_auth_cookies(response)
+        raise HTTPException(status_code=401, detail="Refresh revoked (reuse detected)")
     # rotate
     access = create_access_token(user.id, str(user.token_version or "0"))
     refresh_new, jti_new = create_refresh_token(user.id, str(user.token_version or "0"))

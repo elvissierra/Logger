@@ -238,9 +238,10 @@ async function startTimer (seedCard) {
     return
   }
 
-  // If we stopped a previous timer, start the new one at the same rounded boundary.
-  // Otherwise start at a rounded "now" boundary.
-  const startIso = stoppedAtIso || roundDateToIncrement(new Date(), 'ceil').toISOString()
+  // Start at the exact current time. If we just stopped a previous timer, reuse its
+  // stop boundary so the new entry begins exactly where the old one ended (no gap, no overlap).
+  // Duration cleanliness is handled at stop time via snapStopToIncrement().
+  const startIso = stoppedAtIso || new Date().toISOString()
 
   const payload = {
     project_code: seedCard.project_code || seedCard.projectCode || '',
