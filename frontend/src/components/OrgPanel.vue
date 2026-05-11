@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { postJSON, getJSON, patchJSON } from '../lib/api'
+import { createOrg, getMyOrg, getOrgMembers, updateOrg } from '../lib/api'
 
 const props = defineProps({
   user: { type: Object, required: true },
@@ -37,8 +37,8 @@ onMounted(async () => {
 async function loadOrg() {
   try {
     const [orgData, membersData] = await Promise.all([
-      getJSON('/api/orgs/me'),
-      props.user.is_org_admin ? getJSON('/api/orgs/members') : Promise.resolve([]),
+      getMyOrg(),
+      props.user.is_org_admin ? getOrgMembers() : Promise.resolve([]),
     ])
     org.value = orgData
     members.value = membersData
@@ -51,7 +51,7 @@ async function handleCreateOrg() {
   createError.value = ''
   createLoading.value = true
   try {
-    await postJSON('/api/orgs/', {
+    await createOrg({
       name: orgName.value,
       address: address.value,
       phone: phone.value,
@@ -82,7 +82,7 @@ async function saveEdit() {
   editError.value = ''
   editLoading.value = true
   try {
-    org.value = await patchJSON('/api/orgs/', {
+    org.value = await updateOrg({
       name: editName.value,
       address: editAddress.value,
       phone: editPhone.value,

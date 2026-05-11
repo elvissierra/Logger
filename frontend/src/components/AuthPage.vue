@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue'
-import { postJSON, getJSON } from '../lib/api'
+import { postJSON, validateInviteCode } from '../lib/api'
 
 const emit = defineEmits(['login-success'])
 
@@ -48,7 +48,7 @@ async function checkInviteCode() {
   const code = inviteCode.value.trim()
   if (!code) return
   try {
-    const data = await getJSON(`/api/orgs/validate-code?code=${encodeURIComponent(code)}`)
+    const data = await validateInviteCode(code)
     orgNamePreview.value = data.org_name
   } catch {
     inviteCodeError.value = 'Invalid invite code'

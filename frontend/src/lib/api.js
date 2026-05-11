@@ -128,3 +128,23 @@ export function onAuthExpired (handler) {
   window.addEventListener('logger:auth-expired', fn)
   return () => window.removeEventListener('logger:auth-expired', fn)
 }
+
+export async function validateInviteCode(code) {
+  return getJSON(`/api/orgs/validate-code?code=${encodeURIComponent(code)}`)
+}
+
+export async function createOrg(payload) {
+  return postJSON('/api/orgs/', payload)
+}
+
+export async function getMyOrg() {
+  return getJSON('/api/orgs/me')
+}
+
+export async function getOrgMembers() {
+  return getJSON('/api/orgs/members')
+}
+
+export async function updateOrg(payload) {
+  return patchJSON('/api/orgs/', payload)
+}
