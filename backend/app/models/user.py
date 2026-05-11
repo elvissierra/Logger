@@ -14,7 +14,7 @@ Notes
 - token_version lets you force-logout users by bumping the version; last_password_change aids forensics.
 """
 
-from sqlalchemy import Column, String, Boolean, TIMESTAMP, Text, func, Index, Integer
+from sqlalchemy import Column, String, Boolean, TIMESTAMP, Text, func, Index, Integer, ForeignKey
 import uuid
 from app.core.database import Base
 
@@ -56,3 +56,8 @@ class User(Base):
 
     # Time rounding increment in minutes (1, 5, 10, 15)
     time_increment_minutes = Column(Integer, nullable=False, default=5)
+
+    # Multi-tenant organization support
+    org_id = Column(String, ForeignKey("organizations.id"), nullable=True, default=None)
+    is_org_admin = Column(Boolean, nullable=False, server_default="false")
+    account_type = Column(String, nullable=False, server_default="solo")
