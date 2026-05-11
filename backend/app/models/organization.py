@@ -33,7 +33,7 @@ class Organization(Base):
     address = Column(String, nullable=False)
     phone = Column(String, nullable=False)
     headcount = Column(Integer, nullable=False)
-    invite_code = Column(String, unique=True, nullable=False, index=True)
+    invite_code = Column(String, unique=True, nullable=False)
     created_at = Column(
         TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
     )

@@ -32,8 +32,8 @@ class User(Base):
     email = Column(String, nullable=False, unique=True)
     password_hash = Column(String, nullable=False)
     # Account status flags used by auth logic and admin screens.
-    is_active = Column(Boolean, nullable=False, server_default="true")
-    email_verified = Column(Boolean, nullable=False, server_default="false")
+    is_active = Column(Boolean, nullable=False, server_default="1")
+    email_verified = Column(Boolean, nullable=False, server_default="0")
     # Security metadata used to invalidate tokens and track password changes.
     token_version = Column(String, nullable=False, server_default="0")
     last_password_change = Column(
@@ -59,5 +59,5 @@ class User(Base):
 
     # Multi-tenant organization support
     org_id = Column(String, ForeignKey("organizations.id"), nullable=True, default=None)
-    is_org_admin = Column(Boolean, nullable=False, server_default="false")
+    is_org_admin = Column(Boolean, nullable=False, server_default="0")
     account_type = Column(String, nullable=False, server_default="solo")
