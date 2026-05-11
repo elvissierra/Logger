@@ -2,12 +2,14 @@
 <script setup>
 import { ref, onErrorCaptured, computed, onMounted } from 'vue'
 import TimeBoard from './components/TimeBoard.vue'
-import Login from './components/Login.vue'
+import AuthPage from './components/AuthPage.vue'
+import OrgPanel from './components/OrgPanel.vue'
 import { API_BASE, apiFetch, getCsrf } from './lib/api'
 
 const ready = ref(false)
 const err = ref(null)
 const user = ref(null)
+const showOrgPanel = ref(false)
 
 // Try to bootstrap from existing session cookie
 onMounted(async () => {
@@ -56,6 +58,21 @@ function handleLoginSuccess (me) {
   }
 }
 
+function handleOrgCreated() {
+  apiFetch(`${API_BASE}/api/auth/me`)
+    .then(r => r.json())
+    .then(me => { user.value = me })
+  showOrgPanel.value = false
+}
+
+function openOrgPanel() {
+  showOrgPanel.value = true
+}
+
+function closeOrgPanel() {
+  showOrgPanel.value = false
+}
+
 // Logout helper: clears server-side cookies and local app state
 async function handleLogout () {
   try {
@@ -95,6 +112,13 @@ async function handleLogout () {
           <span class="shell__user-name">{{ username }}</span>
         </div>
         <button
+          v-if="isAuthed"
+          class="mini"
+          @click="openOrgPanel"
+        >
+          {{ user.is_org_admin ? 'Org Panel' : 'Create Org' }}
+        </button>
+        <button
           type="button"
           class="shell__logout"
           @click="handleLogout"
@@ -112,12 +136,18 @@ async function handleLogout () {
       </div>
 
       <!-- Not authenticated: show login screen -->
-      <Login
+      <AuthPage
         v-else-if="!isAuthed"
         @login-success="handleLoginSuccess"
       />
 
-      <!-- Authenticated: show board -->
+      <!-- Authenticated: show org panel or board -->
+      <OrgPanel
+        v-else-if="showOrgPanel"
+        :user="user"
+        @org-created="handleOrgCreated"
+        @back="closeOrgPanel"
+      />
       <TimeBoard v-else :user="user" />
     </main>
   </div>
