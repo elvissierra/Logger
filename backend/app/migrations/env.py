@@ -39,6 +39,7 @@ from app.core.database import Base
 
 # Ensure model modules are imported to register tables/indexes on Base.metadata
 from app.models import time_entry  # noqa: F401  (import side-effect registers model)
+from app.models import organization  # noqa: F401  registers Organization on Base.metadata
 
 # this is the Alembic Config object
 config = context.config

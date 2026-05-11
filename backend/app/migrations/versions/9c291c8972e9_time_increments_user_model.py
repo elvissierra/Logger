@@ -28,15 +28,10 @@ def upgrade() -> None:
             nullable=False,
         ),
     )
-    op.create_check_constraint(
-        "users_time_increment_minutes_chk",
-        "users",
-        "time_increment_minutes IN (1,5,10,15)",
-    )
-    # Optional: remove server default after backfill so inserts must be explicit
-    op.alter_column("users", "time_increment_minutes", server_default=None)
+    # SQLite doesn't support CHECK constraints via ALTER TABLE
+    # Validation is handled at the application layer
 
 
 def downgrade() -> None:
-    op.drop_constraint("users_time_increment_minutes_chk", "users", type_="check")
+    # SQLite CHECK constraint was not created, so no need to drop it
     op.drop_column("users", "time_increment_minutes")
