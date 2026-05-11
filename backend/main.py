@@ -21,6 +21,7 @@ import logging
 from app.routes.time_entries import router as time_entries_router
 from app.routes.auth import router as auth_router
 from app.routes import projects as projects_routes
+from app.routes.orgs import router as orgs_router
 from app.core.database import Base, engine
 
 # Strict security middleware for production hardening
@@ -129,6 +130,7 @@ app.include_router(
 )
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(projects_routes.router, prefix="/api/projects", tags=["projects"])
+app.include_router(orgs_router, prefix="/api/orgs", tags=["orgs"])
 
 
 # Small convenience endpoint for health checks

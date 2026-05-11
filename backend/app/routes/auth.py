@@ -24,6 +24,7 @@ import secrets
 from app.core.database import get_db
 from app.models.user import User
 from app.schemas.user import UserCreate, LoginRequest, UserOut
+from app.crud.organizations import get_org_by_invite_code
 from app.core.security import (
     hash_password,
     verify_password,
@@ -75,7 +76,17 @@ def register(payload: UserCreate, response: Response, db: Session = Depends(get_
     exists = _user_by_email(db, payload.email)
     if exists:
         raise HTTPException(status_code=409, detail="Email already registered")
-    user = User(email=str(payload.email), password_hash=hash_password(payload.password))
+    org = None
+    if payload.invite_code:
+        org = get_org_by_invite_code(db, payload.invite_code)
+        if not org:
+            raise HTTPException(status_code=400, detail="Invalid invite code")
+    user = User(
+        email=str(payload.email),
+        password_hash=hash_password(payload.password),
+        org_id=org.id if org else None,
+        account_type="org_member" if org else "solo",
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
