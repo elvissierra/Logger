@@ -44,6 +44,6 @@ def client(db):
             pass
 
     app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app, raise_server_exceptions=True) as c:
+    with TestClient(app, raise_server_exceptions=True, base_url="http://localhost") as c:
         yield c
     app.dependency_overrides.clear()
