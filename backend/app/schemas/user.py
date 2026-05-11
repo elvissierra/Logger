@@ -22,6 +22,7 @@ from pydantic import BaseModel, EmailStr, ConfigDict, Field
 class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
+    invite_code: str | None = None
 
 
 # Payload for /login
@@ -38,3 +39,6 @@ class UserOut(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    is_org_admin: bool
+    account_type: str
+    org_id: str | None
